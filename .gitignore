@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Build artifacts
+*.apworld
+*.zip
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# AP client runtime files
+ap_state.json
+ap_checks.json
+
+# Logs
+*.log
+
+# Internal docs (not for public release)
+docs/research/
+docs/architecture.md
+docs/manual_tests.md
+TODO.md
+.claude/

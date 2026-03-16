@@ -1,0 +1,7 @@
+{
+    "game": "Running with Rifles",
+    "minimum_ap_version": "0.6.4",
+    "world_version": "0.1.0",
+    "compatible_version": 1,
+    "authors": ["mjousse"]
+}
