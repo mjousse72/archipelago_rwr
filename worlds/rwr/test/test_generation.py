@@ -185,8 +185,8 @@ class TestWeaponShuffleCategories(RWRTestBase):
 
 
 class TestWeaponShuffleIndividual(RWRTestBase):
-    """Individual weapons mode — lots of items."""
-    options = {"weapon_shuffle": "individual"}
+    """Individual weapons mode — lots of items, needs individual bases for enough locations."""
+    options = {"weapon_shuffle": "individual", "base_capture_mode": "individual"}
 
     def test_has_individual_weapons(self) -> None:
         item_names = {
@@ -230,8 +230,13 @@ class TestWeaponShuffleIndividual(RWRTestBase):
 
 
 class TestBaseCaptureNone(RWRTestBase):
-    """No base capture locations."""
-    options = {"base_capture_mode": "none"}
+    """No base capture locations — needs deliveries+briefcases for enough locations."""
+    options = {
+        "base_capture_mode": "none",
+        "shuffle_radio_calls": False,
+        "shuffle_deliveries": True,
+        "shuffle_briefcases": True,
+    }
 
     def test_no_capture_locations(self) -> None:
         location_names = {
@@ -405,22 +410,23 @@ class TestMaximumChecks(RWRTestBase):
 
 
 class TestMinimumChecks(RWRTestBase):
-    """Minimum configuration: no weapons, no bases, no side missions."""
+    """Minimum viable configuration: no weapons, no bases, just conquests + side missions."""
     options = {
         "weapon_shuffle": "none",
         "base_capture_mode": "none",
-        "include_side_missions": False,
+        "include_side_missions": True,
         "shuffle_radio_calls": False,
+        "grenade_shuffle": "none",
+        "vest_shuffle": "none",
     }
 
     def test_low_location_count(self) -> None:
-        """Should have fewer locations with min settings."""
         player_locations = [
             loc for loc in self.multiworld.get_locations()
             if loc.player == self.player and loc.address is not None
         ]
-        # 12 conquests only (no ranks, no bases, no side missions)
-        self.assertEqual(len(player_locations), 12)
+        # 12 conquests + 10 side missions = 22
+        self.assertEqual(len(player_locations), 22)
 
     def test_items_match(self) -> None:
         player_locations = [

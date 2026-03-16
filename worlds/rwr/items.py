@@ -414,27 +414,17 @@ def create_all_items(world: RWRWorld) -> None:
     """Create all items and add them to the multiworld pool."""
     from .locations import STARTING_MAP
 
+    total_locations = len(world.multiworld.get_unfilled_locations(world.player))
     itempool: list[RWRItem] = []
 
-    # --- Progression items (always added) ---
-
-    # Map keys — starting map key is excluded
+    # --- Map keys (always) ---
     starting_key = f"{STARTING_MAP} Key"
     for name in MAP_KEYS:
         if name == starting_key:
             continue
         itempool.append(create_item(world, name))
 
-    # Squadmate Slots: 9 copies (each = +1 rank = bigger squad)
-    for _ in range(9):
-        itempool.append(create_item(world, "Squadmate Slot"))
-
-    # Precollect starting rank promotions as Squadmate Slots
-    for _ in range(world.options.starting_rank.value):
-        world.push_precollected(create_item(world, "Squadmate Slot"))
-
-    # --- Weapon items (conditional on weapon_shuffle) ---
-
+    # --- Weapons (conditional) ---
     weapon_mode = world.options.weapon_shuffle.value
     start_weapons = bool(world.options.start_with_basic_weapons)
 
@@ -457,10 +447,7 @@ def create_all_items(world: RWRWorld) -> None:
             else:
                 itempool.append(item)
 
-    # weapon_shuffle=none: no weapon items, vanilla rank progression
-
     # --- Radio calls (conditional) ---
-
     if world.options.shuffle_radio_calls:
         start_radio = bool(world.options.start_with_radio)
         for name in RADIO_CALLS:
@@ -471,7 +458,6 @@ def create_all_items(world: RWRWorld) -> None:
                 itempool.append(item)
 
     # --- Vanilla grenades (conditional) ---
-
     grenade_mode = world.options.grenade_shuffle.value
     start_grenades = bool(world.options.start_with_grenades)
 
@@ -490,7 +476,6 @@ def create_all_items(world: RWRWorld) -> None:
                 itempool.append(item)
 
     # --- Vanilla vests (conditional) ---
-
     vest_mode = world.options.vest_shuffle.value
     start_vests = bool(world.options.start_with_vests)
 
@@ -509,7 +494,6 @@ def create_all_items(world: RWRWorld) -> None:
                 itempool.append(item)
 
     # --- Vanilla costumes (conditional) ---
-
     costume_mode = world.options.costume_shuffle.value
     start_costumes = bool(world.options.start_with_costumes)
 
@@ -527,30 +511,37 @@ def create_all_items(world: RWRWorld) -> None:
             else:
                 itempool.append(item)
 
+    # --- Squadmate Slots (need at least 5 for final missions, up to 9) ---
+    # Always precollect at least 1 so rank >= 1 maps are reachable from the start
+    precollected_slots = max(1, world.options.starting_rank.value)
+    for _ in range(precollected_slots):
+        world.push_precollected(create_item(world, "Squadmate Slot"))
+
+    min_squad_slots = max(0, 5 - precollected_slots)
+    available = total_locations - len(itempool)
+    if available < min_squad_slots:
+        raise Exception(
+            f"[{world.player_name}] Not enough locations ({total_locations}) "
+            f"for required items ({len(itempool)} items + {min_squad_slots} "
+            f"squad slots). Enable more location options."
+        )
+    squad_slots_to_add = min(9 - precollected_slots, available)
+    for _ in range(squad_slots_to_add):
+        itempool.append(create_item(world, "Squadmate Slot"))
+
     # --- Useful items (added while there's room) ---
-
-    # Priority order: C4 first (progression), then equipment, then resource items
     useful_queue: list[tuple[str, int]] = []
-
-    # Throwables (C4 is progression, rest useful)
     for name in THROWABLES:
         useful_queue.append((name, 1))
-
-    # Equipment
     for name in EQUIPMENT:
         useful_queue.append((name, 1))
-
-    # Useful items — multiple copies for pool variety
     useful_queue.append(("RP Bundle (Small)", 5))
     useful_queue.append(("RP Bundle (Medium)", 3))
     useful_queue.append(("RP Bundle (Large)", 2))
     useful_queue.append(("XP Boost", 3))
     useful_queue.append(("Rare Weapon Voucher", 3))
 
-    # Count available location slots
-    total_locations = len(world.multiworld.get_unfilled_locations(world.player))
     remaining = total_locations - len(itempool)
-
     for item_name, count in useful_queue:
         for _ in range(count):
             if remaining <= 0:

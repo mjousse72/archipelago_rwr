@@ -102,7 +102,8 @@ def _set_conquest_rules(world: RWRWorld, player: int) -> None:
             loc = world.get_location(loc_name)
         except KeyError:
             continue
-        # Conquering a map requires at least rank 1 (some combat ability)
+        if map_name == STARTING_MAP:
+            continue  # starting map is always reachable
         set_rule(loc, lambda state: _rank_level(state, player) >= 1)
 
     # Final missions require higher rank
@@ -147,13 +148,14 @@ def _set_base_capture_rules(world: RWRWorld, player: int) -> None:
 
 def _set_victory_event_rules(world: RWRWorld, player: int) -> None:
     """Set rules on victory events (used for completion conditions)."""
-    # Map victories require rank 1 (basic combat ability)
     for map_name in MAP_NAMES:
         event_name = f"Victory: {map_name}"
         try:
             loc = world.get_location(event_name)
         except KeyError:
             continue
+        if map_name == STARTING_MAP:
+            continue  # starting map is always reachable
         set_rule(loc, lambda state: _rank_level(state, player) >= 1)
 
     # Final mission victories require rank 5
