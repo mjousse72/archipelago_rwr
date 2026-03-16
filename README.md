@@ -37,7 +37,7 @@ You should end up with a `rwr_archipelago/` folder containing `package_config.xm
 
 ### 3. Configure your YAML
 
-Generate a template from the Archipelago launcher or website, edit the options, and submit it to the host.
+Generate a template from the Archipelago launcher, edit the options, and submit it to the host.
 
 ### 4. Connect
 
