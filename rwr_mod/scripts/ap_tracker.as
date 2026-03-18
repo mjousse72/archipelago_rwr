@@ -1,4 +1,8 @@
-// Archipelago tracker: syncs AP state with the game, detects checks, applies items and traps.
+// ap_tracker.as — Production Archipelago Tracker for RWR
+//
+// Reads game state from ap_state.xml (written by the Python bridge),
+// applies items in-game, detects location checks, handles traps
+// and death link, and reports back via _log("[AP_...") lines.
 
 #include "tracker.as"
 #include "helpers.as"
@@ -60,7 +64,14 @@ class APTracker : Tracker {
 	protected array<string> m_notifications;
 	protected bool m_deathLinkEnabled = false;
 	protected bool m_deathLinkPending = false;
+	protected string m_deathLinkMode = "kill";  // "kill" or "random_trap"
 	protected bool m_goalComplete = false;
+
+	// -- RP Shop --
+	protected bool m_rpShopEnabled = false;
+	protected int m_rpShopCost = 1000;
+	protected int m_rpShopPerMap = 3;
+	protected dictionary m_rpShopPurchased;  // mapName -> int count
 
 	// -- Unlocked sets (key -> true) --
 	protected dictionary m_unlockedMaps;
@@ -502,11 +513,21 @@ class APTracker : Tracker {
 			}
 		}
 
-		// <death_link enabled="0" pending="0" />
+		// <death_link enabled="0" pending="0" mode="kill" />
 		const XmlElement@ dlElem = root.getFirstElementByTagName("death_link");
 		if (dlElem !is null) {
 			m_deathLinkEnabled = (dlElem.getIntAttribute("enabled") == 1);
 			m_deathLinkPending = (dlElem.getIntAttribute("pending") == 1);
+			m_deathLinkMode = dlElem.getStringAttribute("mode");
+			if (m_deathLinkMode == "") m_deathLinkMode = "kill";
+		}
+
+		// <rp_shop enabled="0" cost="1000" per_map="3" />
+		const XmlElement@ shopElem = root.getFirstElementByTagName("rp_shop");
+		if (shopElem !is null) {
+			m_rpShopEnabled = (shopElem.getIntAttribute("enabled") == 1);
+			m_rpShopCost = shopElem.getIntAttribute("cost");
+			m_rpShopPerMap = shopElem.getIntAttribute("per_map");
 		}
 
 		// <goal complete="0" />
@@ -718,7 +739,7 @@ class APTracker : Tracker {
 			string file = ALL_EQUIPMENT_FILES[i];
 			bool unlocked = m_unlockedEquipFiles.exists(file);
 			string type;
-			if (!EQUIPMENT_FILE_TO_TYPE.get(file, type) || type.length() == 0) continue;
+			EQUIPMENT_FILE_TO_TYPE.get(file, type);
 			cmd += "<" + type + " key='" + file + "' enabled='" +
 				(unlocked ? "1" : "0") + "' />";
 		}
@@ -728,7 +749,7 @@ class APTracker : Tracker {
 			string file = ALL_THROWABLE_FILES[i];
 			bool unlocked = m_unlockedThrowFiles.exists(file);
 			string type;
-			if (!THROWABLE_FILE_TO_TYPE.get(file, type) || type.length() == 0) continue;
+			THROWABLE_FILE_TO_TYPE.get(file, type);
 			cmd += "<" + type + " key='" + file + "' enabled='" +
 				(unlocked ? "1" : "0") + "' />";
 		}
@@ -946,7 +967,7 @@ class APTracker : Tracker {
 			sendChat("TRAP: Radio Jammer! Comms disabled for " + int(dur) + " seconds.");
 			m_radioJammerActive = true;
 			m_radioJammerTimer = dur;
-			applyAllFactionResources();
+			disableAllCalls();
 		}
 		else if (trapKey == "friendly_fire") {
 			if (m_playerCharacterId >= 0) {
@@ -973,6 +994,15 @@ class APTracker : Tracker {
 			sendChat("TRAP: Squad Desertion! Your squad has abandoned you.");
 			killNearbyFriendlies(killCount);
 		}
+	}
+
+	protected void disableAllCalls() {
+		string cmd = "<command class='faction_resources' faction_id='0'>";
+		for (uint i = 0; i < ALL_CALL_FILES.size(); i++) {
+			cmd += "<call key='" + ALL_CALL_FILES[i] + "' enabled='0' />";
+		}
+		cmd += "</command>";
+		m_metagame.getComms().send(cmd);
 	}
 
 	protected void killNearbyFriendlies(int count) {
@@ -1026,11 +1056,17 @@ class APTracker : Tracker {
 		if (!m_deathLinkPending || !m_deathLinkEnabled) return;
 		if (m_playerCharacterId < 0 || !m_playerAlive) return;
 
-		sendChat("DEATH LINK: Another player has fallen...");
-		m_deathLinkKillInProgress = true;
-		killCharacter(m_metagame, m_playerCharacterId);
+		if (m_deathLinkMode == "random_trap") {
+			array<string> trapKeys = {"demotion", "radio_jammer", "friendly_fire", "squad_desertion"};
+			string pick = trapKeys[rand() % trapKeys.size()];
+			sendChat("DEATH LINK: Another player has fallen... (trap: " + pick + ")");
+			executeTrap(pick);
+		} else {
+			sendChat("DEATH LINK: Another player has fallen...");
+			m_deathLinkKillInProgress = true;
+			killCharacter(m_metagame, m_playerCharacterId);
+		}
 		m_deathLinkPending = false;
-		_log("[AP_DEATHLINK_ACK]");
 	}
 
 	// ============================================================
@@ -1096,6 +1132,10 @@ class APTracker : Tracker {
 			cmdChecks();
 		} else if (checkCommand(message, "aphelp")) {
 			cmdHelp();
+		} else if (checkCommand(message, "apbuy")) {
+			cmdBuy();
+		} else if (checkCommand(message, "apshop")) {
+			cmdShop();
 		} else if (checkCommand(message, "goto")) {
 			cmdGoto(message);
 		}
@@ -1225,12 +1265,113 @@ class APTracker : Tracker {
 		sendChat("Map: " + mapName + " - " + sent + " checks sent");
 	}
 
+	protected void cmdBuy() {
+		if (m_state != AP_RUNNING) {
+			sendChat("Not connected to AP.");
+			return;
+		}
+		if (!m_rpShopEnabled) {
+			sendChat("RP Shop is not enabled for this seed.");
+			return;
+		}
+		if (m_mapRotator is null) {
+			sendChat("Map info not available.");
+			return;
+		}
+
+		string mapId = m_mapRotator.getCurrentMapId();
+		string mapName = getMapNameFromId(mapId);
+
+		// Get purchase count for this map
+		int purchased = 0;
+		if (m_rpShopPurchased.exists(mapName)) {
+			m_rpShopPurchased.get(mapName, purchased);
+		}
+
+		if (purchased >= m_rpShopPerMap) {
+			sendChat("No more RP Shop checks on " + mapName + " (" + purchased + "/" + m_rpShopPerMap + ").");
+			return;
+		}
+
+		// Read player RP
+		if (m_playerCharacterId < 0) {
+			sendChat("Player not found.");
+			return;
+		}
+		const XmlElement@ charInfo = getCharacterInfo(m_metagame, m_playerCharacterId);
+		if (charInfo is null) {
+			sendChat("Cannot read player info.");
+			return;
+		}
+		int playerRP = charInfo.getIntAttribute("rp");
+
+		if (playerRP < m_rpShopCost) {
+			sendChat("Not enough RP! Need " + m_rpShopCost + ", have " + playerRP + ".");
+			return;
+		}
+
+		// Deduct RP
+		string cmd = "<command class='rp_reward' character_id='" +
+			m_playerCharacterId + "' reward='" + (-m_rpShopCost) + "' />";
+		m_metagame.getComms().send(cmd);
+
+		// Increment and report check
+		purchased++;
+		m_rpShopPurchased.set(mapName, purchased);
+		string locName = "RP Shop " + purchased + " (" + mapName + ")";
+		reportCheck(locName);
+
+		int remaining = m_rpShopPerMap - purchased;
+		sendChat("Purchased! " + remaining + " remaining on " + mapName + ".");
+
+		// Save immediately
+		saveModState();
+	}
+
+	protected void cmdShop() {
+		if (m_state != AP_RUNNING) {
+			sendChat("Not connected to AP.");
+			return;
+		}
+		if (!m_rpShopEnabled) {
+			sendChat("RP Shop is not enabled for this seed.");
+			return;
+		}
+		if (m_mapRotator is null) {
+			sendChat("Map info not available.");
+			return;
+		}
+
+		string mapId = m_mapRotator.getCurrentMapId();
+		string mapName = getMapNameFromId(mapId);
+
+		int purchased = 0;
+		if (m_rpShopPurchased.exists(mapName)) {
+			m_rpShopPurchased.get(mapName, purchased);
+		}
+		int remaining = m_rpShopPerMap - purchased;
+
+		// Read player RP
+		string rpStr = "?";
+		if (m_playerCharacterId >= 0) {
+			const XmlElement@ charInfo = getCharacterInfo(m_metagame, m_playerCharacterId);
+			if (charInfo !is null) {
+				rpStr = "" + charInfo.getIntAttribute("rp");
+			}
+		}
+
+		sendChat("RP Shop (" + mapName + "): " + remaining + "/" + m_rpShopPerMap + " remaining");
+		sendChat("Cost: " + m_rpShopCost + " RP | Your RP: " + rpStr);
+	}
+
 	protected void cmdHelp() {
 		sendChat("AP Commands:");
 		sendChat("  /apstatus  - Connection status & progress");
 		sendChat("  /apitems   - Unlocked items summary");
 		sendChat("  /apmaps    - Show map unlock status");
 		sendChat("  /apchecks  - Checks on current map");
+		sendChat("  /apbuy     - Buy an RP Shop check");
+		sendChat("  /apshop    - Show RP Shop status");
 		sendChat("  /goto <map> - Fast travel to unlocked map");
 		sendChat("  /aphelp    - This help");
 	}
@@ -1275,6 +1416,16 @@ class APTracker : Tracker {
 			cmd += "<weapon file='" + escapeXml(voucherKeys[i]) + "' />";
 		}
 		cmd += "</vouchers>";
+
+		// RP Shop purchases
+		cmd += "<rp_shop_purchased>";
+		array<string> shopKeys = m_rpShopPurchased.getKeys();
+		for (uint i = 0; i < shopKeys.size(); i++) {
+			int count = 0;
+			m_rpShopPurchased.get(shopKeys[i], count);
+			cmd += "<map name='" + escapeXml(shopKeys[i]) + "' count='" + count + "' />";
+		}
+		cmd += "</rp_shop_purchased>";
 
 		// Delivery counters (briefcase/laptop)
 		cmd += "<deliveries briefcases='" + g_apBriefcaseCount + "' laptops='" + g_apLaptopCount + "' />";
@@ -1371,6 +1522,20 @@ class APTracker : Tracker {
 			_log("[AP] Restored voucher state: " + m_vouchersRedeemed + " redeemed, " +
 				m_voucherUnlockedFiles.getKeys().size() + " weapons unlocked, " +
 				m_voucherBonusRP + " bonus RP");
+		}
+
+		// Restore RP Shop purchases
+		const XmlElement@ rpShopElem = modState.getFirstElementByTagName("rp_shop_purchased");
+		if (rpShopElem !is null) {
+			array<const XmlElement@>@ shopMaps = rpShopElem.getElementsByTagName("map");
+			for (uint i = 0; i < shopMaps.size(); i++) {
+				string name = shopMaps[i].getStringAttribute("name");
+				int count = shopMaps[i].getIntAttribute("count");
+				if (name.length() > 0 && count > 0) {
+					m_rpShopPurchased.set(name, count);
+				}
+			}
+			_log("[AP] Restored RP Shop purchases: " + m_rpShopPurchased.getKeys().size() + " maps");
 		}
 
 		// Restore delivery counters

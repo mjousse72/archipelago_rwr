@@ -232,11 +232,52 @@ class ShuffleBriefcases(Toggle):
     display_name = "Shuffle Briefcases & Laptops"
 
 
+class RPShop(Toggle):
+    """
+    Spend in-game RP to purchase Archipelago checks via /apbuy command.
+    Each map gets a number of purchasable checks (see rp_shop_per_map).
+    """
+    display_name = "RP Shop"
+
+
+class RPShopPerMap(Range):
+    """
+    Number of RP Shop checks available per map (only used when RP Shop is enabled).
+    """
+    display_name = "RP Shop Per Map"
+    range_start = 1
+    range_end = 5
+    default = 3
+
+
+class RPShopCost(Range):
+    """
+    RP cost for each shop purchase.
+    """
+    display_name = "RP Shop Cost"
+    range_start = 200
+    range_end = 5000
+    default = 1000
+
+
 class DeathLink(Toggle):
     """
     When you die, everyone who enabled Death Link dies. When someone else dies, you die.
     """
     display_name = "Death Link"
+
+
+class DeathLinkMode(Choice):
+    """
+    What happens when you receive a death link from another player.
+
+    Kill: You die instantly (default).
+    Random Trap: A random trap is applied instead of killing you.
+    """
+    display_name = "Death Link Mode"
+    option_kill = 0
+    option_random_trap = 1
+    default = option_kill
 
 
 @dataclass
@@ -261,7 +302,11 @@ class RWROptions(PerGameCommonOptions):
     start_with_basic_weapons: StartWithBasicWeapons
     shuffle_deliveries: ShuffleDeliveries
     shuffle_briefcases: ShuffleBriefcases
+    rp_shop: RPShop
+    rp_shop_per_map: RPShopPerMap
+    rp_shop_cost: RPShopCost
     death_link: DeathLink
+    death_link_mode: DeathLinkMode
 
 
 option_groups = [
@@ -272,10 +317,11 @@ option_groups = [
         IncludeSideMissions, ShuffleRadioCalls,
         GrenadeShuffle, VestShuffle, CostumeShuffle,
         ShuffleDeliveries, ShuffleBriefcases,
+        RPShop, RPShopPerMap, RPShopCost,
         StartWithGrenades, StartWithVests, StartWithCostumes,
         StartWithRadio, StartWithBasicWeapons,
     ]),
-    OptionGroup("Multiplayer", [DeathLink]),
+    OptionGroup("Multiplayer", [DeathLink, DeathLinkMode]),
 ]
 
 option_presets = {
@@ -316,6 +362,8 @@ option_presets = {
         "costume_shuffle": CostumeShuffle.option_individual,
         "shuffle_deliveries": True,
         "shuffle_briefcases": True,
+        "rp_shop": True,
+        "rp_shop_per_map": 5,
     },
     "Completionist": {
         "goal": Goal.option_full_conquest,
@@ -329,5 +377,7 @@ option_presets = {
         "costume_shuffle": CostumeShuffle.option_individual,
         "shuffle_deliveries": True,
         "shuffle_briefcases": True,
+        "rp_shop": True,
+        "rp_shop_per_map": 5,
     },
 }

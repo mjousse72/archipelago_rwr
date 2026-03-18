@@ -114,6 +114,16 @@ def build_location_table(slot_data: dict[str, Any]) -> dict[str, int]:
             name_to_id[f"Laptop Delivery {i}"] = LOC_BASE_ID + idx
         idx += 1
 
+    # 8) RP Shop locations (filtered by rp_shop + rp_shop_per_map)
+    rp_shop_enabled = bool(slot_data.get("rp_shop", 0))
+    rp_shop_per_map = slot_data.get("rp_shop_per_map", 3)
+    max_rp_shop = 5
+    for map_name in ALL_MAPS:
+        for i in range(1, max_rp_shop + 1):
+            if rp_shop_enabled and i <= rp_shop_per_map:
+                name_to_id[f"RP Shop {i} ({map_name})"] = LOC_BASE_ID + idx
+            idx += 1
+
     return name_to_id
 
 
@@ -312,9 +322,16 @@ def build_game_state(
         else:
             logger.debug("Unhandled item: %s", item_name)
 
+    # RP Shop config
+    state.rp_shop_enabled = bool(slot_data.get("rp_shop", 0))
+    state.rp_shop_cost = slot_data.get("rp_shop_cost", 1000)
+    state.rp_shop_per_map = slot_data.get("rp_shop_per_map", 3)
+
     # Death link state
     state.death_link_enabled = bool(slot_data.get("death_link", 0))
     state.death_link_pending = death_link_pending
+    death_link_mode_val = slot_data.get("death_link_mode", 0)
+    state.death_link_mode = "random_trap" if death_link_mode_val == 1 else "kill"
 
     # Goal
     state.goal_complete = finished_game

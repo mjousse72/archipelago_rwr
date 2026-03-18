@@ -41,11 +41,11 @@ class APWeaponDeliveryUnlocker : ResourceUnlocker {
 	}
 
 	bool handleItemDeliveryCompleted(const Resource@ item, int characterId = -1, int playerId = -1) {
-		bool result = ResourceUnlocker::handleItemDeliveryCompleted(item, characterId, playerId);
-		if (result && m_weaponDisplayName.length() > 0) {
+		ResourceUnlocker::handleItemDeliveryCompleted(item, characterId, playerId);
+		if (m_weaponDisplayName.length() > 0) {
 			_log("[AP_CHECK] Delivered " + m_weaponDisplayName);
 		}
-		return result;
+		return true;
 	}
 }
 
@@ -140,6 +140,13 @@ class MyItemDeliveryConfigurator : ItemDeliveryConfiguratorInvasion {
 		list.push_back(Resource("qbs-09.weapon", "weapon"));
 		list.push_back(Resource("rpg-7.weapon", "weapon"));
 		return list;
+	}
+
+	// Always return all deliverable weapons, even if already in faction_resources.
+	// The vanilla version filters out owned weapons, but AP may have unlocked them
+	// before the player gets a chance to deliver them for the check.
+	protected array<Resource@>@ getEnemyWeaponDeliverables() const override {
+		return getDeliverablesList();
 	}
 
 	// ============================================================

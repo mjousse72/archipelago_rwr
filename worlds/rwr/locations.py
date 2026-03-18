@@ -7,7 +7,7 @@ from BaseClasses import Location
 if TYPE_CHECKING:
     from . import RWRWorld
 
-from .options import BaseCaptureMode, ShuffleBriefcases, ShuffleDeliveries
+from .options import BaseCaptureMode, RPShop, ShuffleBriefcases, ShuffleDeliveries
 
 
 class RWRLocation(Location):
@@ -243,6 +243,16 @@ LAPTOP_LOCATIONS: list[tuple[str, str]] = [
     (f"Laptop Delivery {i}", "Delivery") for i in range(1, _MAX_LAPTOP + 1)
 ]
 
+# --- RP Shop locations (buy checks with in-game RP via /apbuy) ---
+
+_MAX_RP_SHOP_PER_MAP = 5
+
+RP_SHOP_LOCATIONS: list[tuple[str, str]] = [
+    (f"RP Shop {i} ({map_name})", map_name)
+    for map_name in ALL_MAP_NAMES
+    for i in range(1, _MAX_RP_SHOP_PER_MAP + 1)
+]
+
 # All possible locations (superset — used for stable ID assignment)
 ALL_LOCATIONS: list[tuple[str, str]] = (
     CONQUEST_LOCATIONS
@@ -252,6 +262,7 @@ ALL_LOCATIONS: list[tuple[str, str]] = (
     + DELIVERY_LOCATIONS
     + BRIEFCASE_LOCATIONS
     + LAPTOP_LOCATIONS
+    + RP_SHOP_LOCATIONS
 )
 
 LOCATION_NAME_TO_ID: dict[str, int] = {
@@ -267,6 +278,7 @@ LOCATION_NAME_GROUPS: dict[str, set[str]] = {
     "Weapon Deliveries": {name for name, _ in DELIVERY_LOCATIONS},
     "Briefcase Deliveries": {name for name, _ in BRIEFCASE_LOCATIONS},
     "Laptop Deliveries": {name for name, _ in LAPTOP_LOCATIONS},
+    "RP Shop": {name for name, _ in RP_SHOP_LOCATIONS},
 }
 for _map_name in ALL_MAP_NAMES:
     LOCATION_NAME_GROUPS[_map_name] = {
@@ -280,6 +292,7 @@ _INDIVIDUAL_NAMES: set[str] = {name for name, _ in INDIVIDUAL_BASE_LOCATIONS}
 _DELIVERY_NAMES: set[str] = {name for name, _ in DELIVERY_LOCATIONS}
 _BRIEFCASE_NAMES: set[str] = {name for name, _ in BRIEFCASE_LOCATIONS}
 _LAPTOP_NAMES: set[str] = {name for name, _ in LAPTOP_LOCATIONS}
+_RP_SHOP_NAMES: set[str] = {name for name, _ in RP_SHOP_LOCATIONS}
 
 
 def create_locations_for_region(world: RWRWorld, region_name: str) -> None:
@@ -290,6 +303,8 @@ def create_locations_for_region(world: RWRWorld, region_name: str) -> None:
     captures_per_map = world.options.base_captures_per_map.value
     shuffle_deliveries = world.options.shuffle_deliveries.value
     shuffle_briefcases = world.options.shuffle_briefcases.value
+    rp_shop_enabled = world.options.rp_shop.value
+    rp_shop_per_map = world.options.rp_shop_per_map.value
 
     # Build the set of active progressive capture location names for this config
     active_progressive: set[str] = set()
@@ -325,6 +340,15 @@ def create_locations_for_region(world: RWRWorld, region_name: str) -> None:
         # Filter briefcase/laptop deliveries
         if loc_name in _BRIEFCASE_NAMES or loc_name in _LAPTOP_NAMES:
             if shuffle_briefcases != ShuffleBriefcases.option_true:
+                continue
+
+        # Filter RP Shop locations
+        if loc_name in _RP_SHOP_NAMES:
+            if rp_shop_enabled != RPShop.option_true:
+                continue
+            # "RP Shop 4 (Keepsake Bay)" — extract the number to check per_map limit
+            shop_num = int(loc_name.split(" ")[2])
+            if shop_num > rp_shop_per_map:
                 continue
 
         region.add_locations(

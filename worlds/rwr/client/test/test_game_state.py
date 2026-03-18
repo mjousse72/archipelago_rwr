@@ -624,6 +624,60 @@ class TestLocationTable(unittest.TestCase):
             key = f"Conquered {name}"
             self.assertEqual(table_prog[key], table_indiv[key])
 
+    # RP Shop
+
+    def test_no_rp_shop_by_default(self) -> None:
+        table = build_location_table(_make_slot_data())
+        shop_count = sum(1 for n in table if n.startswith("RP Shop "))
+        self.assertEqual(shop_count, 0)
+
+    def test_rp_shop_locations_when_enabled(self) -> None:
+        table = build_location_table(_make_slot_data(rp_shop=1, rp_shop_per_map=3))
+        self.assertIn("RP Shop 1 (Keepsake Bay)", table)
+        self.assertIn("RP Shop 3 (Moorland Trenches)", table)
+        self.assertNotIn("RP Shop 4 (Keepsake Bay)", table)
+
+    def test_rp_shop_location_count(self) -> None:
+        table = build_location_table(_make_slot_data(rp_shop=1, rp_shop_per_map=3))
+        shop_count = sum(1 for n in table if n.startswith("RP Shop "))
+        self.assertEqual(shop_count, 3 * len(ALL_MAPS))  # 3 per map * 12 maps
+
+    def test_rp_shop_per_map_limit(self) -> None:
+        table = build_location_table(_make_slot_data(rp_shop=1, rp_shop_per_map=1))
+        shop_count = sum(1 for n in table if n.startswith("RP Shop "))
+        self.assertEqual(shop_count, 1 * len(ALL_MAPS))
+        self.assertIn("RP Shop 1 (Fridge Valley)", table)
+        self.assertNotIn("RP Shop 2 (Fridge Valley)", table)
+
+    def test_rp_shop_max_per_map(self) -> None:
+        table = build_location_table(_make_slot_data(rp_shop=1, rp_shop_per_map=5))
+        shop_count = sum(1 for n in table if n.startswith("RP Shop "))
+        self.assertEqual(shop_count, 5 * len(ALL_MAPS))
+
+    def test_rp_shop_ids_stable(self) -> None:
+        """Enabling RP Shop should not change IDs of other locations."""
+        table_off = build_location_table(_make_slot_data(rp_shop=0))
+        table_on = build_location_table(_make_slot_data(rp_shop=1, rp_shop_per_map=3))
+        for name in REGULAR_MAPS:
+            key = f"Conquered {name}"
+            self.assertEqual(table_off[key], table_on[key])
+
+
+class TestRPShopGameState(unittest.TestCase):
+    def test_rp_shop_config_in_state(self) -> None:
+        state, _ = build_game_state(
+            items=[], slot_data=_make_slot_data(rp_shop=1, rp_shop_cost=500, rp_shop_per_map=2)
+        )
+        self.assertTrue(state.rp_shop_enabled)
+        self.assertEqual(state.rp_shop_cost, 500)
+        self.assertEqual(state.rp_shop_per_map, 2)
+
+    def test_rp_shop_disabled_by_default(self) -> None:
+        state, _ = build_game_state(items=[], slot_data=_make_slot_data())
+        self.assertFalse(state.rp_shop_enabled)
+        self.assertEqual(state.rp_shop_cost, 1000)
+        self.assertEqual(state.rp_shop_per_map, 3)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -472,10 +472,26 @@ class TestBridgeXMLGeneration(unittest.TestCase):
             "ap_state", "rank", "maps", "weapons", "radio",
             "equipment", "throwables", "vanilla_grenades",
             "vanilla_vests", "vanilla_costumes",
-            "resources", "traps", "death_link", "goal",
+            "resources", "traps", "rp_shop", "death_link", "goal",
         ]
         for tag in expected_tags:
             self.assertIsNotNone(root.find(tag), f"Missing XML element: <{tag}>")
+
+    def test_rp_shop_in_xml(self) -> None:
+        state = GameState(connected=True, rp_shop_enabled=True, rp_shop_cost=500, rp_shop_per_map=2)
+        root = self._write_and_parse(state)
+        shop = root.find("rp_shop")
+        self.assertIsNotNone(shop)
+        self.assertEqual(shop.get("enabled"), "1")
+        self.assertEqual(shop.get("cost"), "500")
+        self.assertEqual(shop.get("per_map"), "2")
+
+    def test_rp_shop_disabled_in_xml(self) -> None:
+        state = GameState(connected=True)
+        root = self._write_and_parse(state)
+        shop = root.find("rp_shop")
+        self.assertIsNotNone(shop)
+        self.assertEqual(shop.get("enabled"), "0")
 
 
 # ============================================================

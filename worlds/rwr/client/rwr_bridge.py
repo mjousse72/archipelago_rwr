@@ -72,9 +72,15 @@ class GameState:
     # Notifications (item receive messages)
     notifications: list[str] = field(default_factory=list)
 
+    # RP Shop
+    rp_shop_enabled: bool = False
+    rp_shop_cost: int = 1000
+    rp_shop_per_map: int = 3
+
     # Death link
     death_link_enabled: bool = False
     death_link_pending: bool = False
+    death_link_mode: str = "kill"  # "kill" | "random_trap"
 
     # Goal
     goal_complete: bool = False
@@ -296,10 +302,18 @@ class RWRBridge:
             lines.append(f'    <trap id="{trap_id}" key="{_esc(trap_key)}" />')
         lines.append("  </traps>")
 
-        # <death_link enabled="0" pending="0" />
+        # <rp_shop enabled="0" cost="1000" per_map="3" />
+        lines.append(
+            f'  <rp_shop enabled="{_b(state.rp_shop_enabled)}" '
+            f'cost="{state.rp_shop_cost}" '
+            f'per_map="{state.rp_shop_per_map}" />'
+        )
+
+        # <death_link enabled="0" pending="0" mode="kill" />
         lines.append(
             f'  <death_link enabled="{_b(state.death_link_enabled)}" '
-            f'pending="{_b(state.death_link_pending)}" />'
+            f'pending="{_b(state.death_link_pending)}" '
+            f'mode="{_esc(state.death_link_mode)}" />'
         )
 
         # <goal complete="0" />

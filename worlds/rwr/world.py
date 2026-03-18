@@ -99,7 +99,11 @@ class RWRWorld(World):
             "costume_shuffle",
             "shuffle_deliveries",
             "shuffle_briefcases",
+            "rp_shop",
+            "rp_shop_per_map",
+            "rp_shop_cost",
             "death_link",
+            "death_link_mode",
         )
 
         slot["map_internal_ids"] = MAP_INTERNAL_IDS
