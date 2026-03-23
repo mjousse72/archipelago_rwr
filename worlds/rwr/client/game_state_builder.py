@@ -15,7 +15,6 @@ TRAP_NAME_TO_KEY: dict[str, str] = {
     "Demotion": "demotion",
     "Radio Jammer": "radio_jammer",
     "Friendly Fire Incident": "friendly_fire",
-    "Squad Desertion": "squad_desertion",
 }
 
 TRAP_NAMES: set[str] = set(TRAP_NAME_TO_KEY.keys())
@@ -50,7 +49,7 @@ def build_location_table(slot_data: dict[str, Any]) -> dict[str, int]:
     base_names_by_map: dict[str, list[str]] = slot_data.get("base_names_by_map", {})
 
     # Options (must match server-side filtering in locations.py)
-    base_capture_mode = slot_data.get("base_capture_mode", 1)  # 0=none, 1=progressive, 2=individual
+    base_capture_mode = slot_data.get("base_capture_mode", 1)  # 1=progressive, 2=individual
     captures_per_map = slot_data.get("base_captures_per_map", 3)
     include_side_missions = bool(slot_data.get("include_side_missions", 1))
     shuffle_deliveries = bool(slot_data.get("shuffle_deliveries", 0))
@@ -167,6 +166,7 @@ def build_game_state(
     weapon_cat_to_files: dict[str, list[str]] = slot_data.get("weapon_category_to_files", {})
     weapon_cat_name_to_key: dict[str, str] = slot_data.get("weapon_category_name_to_key", {})
     weapon_name_to_file: dict[str, str] = slot_data.get("weapon_name_to_file", {})
+    weapon_companion_files: dict[str, str] = slot_data.get("weapon_companion_files", {})
     call_mapping: dict[str, list[str]] = slot_data.get("call_mapping", {})
     equipment_mapping: dict[str, str] = slot_data.get("equipment_mapping", {})
     throwable_mapping: dict[str, str] = slot_data.get("throwable_mapping", {})
@@ -189,6 +189,9 @@ def build_game_state(
         state.weapon_mode = "individual"
         for file in weapon_name_to_file.values():
             state.unlocked_weapons[file] = False
+            companion = weapon_companion_files.get(file)
+            if companion:
+                state.unlocked_weapons[companion] = False
 
     # --- Initialize radio tracking ---
     state.radio_shuffle = bool(slot_data.get("shuffle_radio_calls", 0))
@@ -204,6 +207,8 @@ def build_game_state(
     # --- Initialize throwable tracking ---
     for file in throwable_mapping.values():
         state.unlocked_throwables[file] = False
+    # C4 is always precollected — unlock unconditionally
+    state.unlocked_throwables["c4.projectile"] = True
 
     # --- Initialize vanilla items ---
     state.grenade_shuffle = grenade_shuffle > 0
@@ -250,7 +255,11 @@ def build_game_state(
 
         # Individual weapons
         elif weapon_shuffle == 2 and item_name in weapon_name_to_file:
-            state.unlocked_weapons[weapon_name_to_file[item_name]] = True
+            wfile = weapon_name_to_file[item_name]
+            state.unlocked_weapons[wfile] = True
+            companion = weapon_companion_files.get(wfile)
+            if companion:
+                state.unlocked_weapons[companion] = True
 
         # Radio master unlock
         elif item_name == "Radio":

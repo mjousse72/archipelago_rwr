@@ -59,7 +59,7 @@ class WeaponShuffle(Choice):
     None: Weapons are unlocked by rank as in vanilla. No weapon items in the pool.
     Categories: 9 weapon category items (Assault Rifles, Machineguns, etc.).
       Receiving a category unlocks all weapons of that type.
-    Individual: Each weapon is its own item (76 items).
+    Individual: Each weapon is its own item (~196 items).
       Maximum randomization.
     """
     display_name = "Weapon Shuffle"
@@ -73,14 +73,12 @@ class BaseCaptureMode(Choice):
     """
     Controls how base captures generate location checks.
 
-    None: Only full map conquests are checks. Fewest locations.
     Progressive: "Captured N bases on Map X" milestones. Number controlled by
       base_captures_per_map.
     Individual: Each named base is its own check (~130 locations total).
       Maximum randomization.
     """
     display_name = "Base Capture Mode"
-    option_none = 0
     option_progressive = 1
     option_individual = 2
     default = option_progressive
@@ -341,7 +339,7 @@ option_presets = {
         "goal": Goal.option_maps_conquered,
         "maps_to_win": 7,
         "weapon_shuffle": WeaponShuffle.option_categories,
-        "base_capture_mode": BaseCaptureMode.option_none,
+        "base_capture_mode": BaseCaptureMode.option_progressive,
         "include_side_missions": False,
         "shuffle_radio_calls": True,
         "trap_chance": 10,

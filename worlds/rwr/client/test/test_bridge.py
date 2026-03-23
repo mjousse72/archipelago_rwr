@@ -702,7 +702,7 @@ class TestGameStateBuilding(unittest.TestCase):
 
     def test_traps_with_acks(self) -> None:
         """Acked traps should not appear in pending."""
-        all_traps = [(1, "demotion"), (2, "radio_jammer"), (3, "friendly_fire"), (4, "squad_desertion")]
+        all_traps = [(1, "demotion"), (2, "radio_jammer"), (3, "friendly_fire")]
         acked = {1, 3}
         pending = [(tid, tkey) for tid, tkey in all_traps if tid not in acked]
 
@@ -710,9 +710,9 @@ class TestGameStateBuilding(unittest.TestCase):
         self.bridge.write_state(state)
         root = ET.parse(self.bridge.state_file).getroot()
         traps = root.find("traps").findall("trap")
-        self.assertEqual(len(traps), 2)
+        self.assertEqual(len(traps), 1)
         trap_ids = {int(t.get("id")) for t in traps}
-        self.assertEqual(trap_ids, {2, 4})
+        self.assertEqual(trap_ids, {2})
 
 
 # ============================================================
