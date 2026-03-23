@@ -46,6 +46,7 @@ class APTracker : Tracker {
 
 	// -- Bridge state (from ap_state.xml) --
 	protected int m_lastVersion = -1;
+	protected bool m_dataChanged = false;
 	protected string m_slotName = "";
 	protected int m_apRankLevel = 0;
 	protected bool m_weaponShuffle = false;
@@ -131,6 +132,11 @@ class APTracker : Tracker {
 	// -- Per-campaign save ID (from bridge) --
 	protected string m_campaignId = "";
 	protected bool m_modStateLoaded = false;
+
+	// -- Rank tracking (only send xp_reward on rank change) --
+	protected int m_lastAppliedRank = -1;
+	protected int m_lastAppliedXPBoost = 0;
+	protected float m_xpCooldownTimer = 0.0;  // wait after sending xp_reward
 
 	// ============================================================
 	//  CONSTRUCTOR
@@ -238,6 +244,11 @@ class APTracker : Tracker {
 			_log("[AP] Connection message sent for slot: " + m_slotName);
 		}
 
+		// XP cooldown timer
+		if (m_xpCooldownTimer > 0.0) {
+			m_xpCooldownTimer -= time;
+		}
+
 		// Poll bridge state
 		m_pollTimer -= time;
 		if (m_pollTimer <= 0.0) {
@@ -326,9 +337,11 @@ class APTracker : Tracker {
 
 		int version = apState.getIntAttribute("version");
 		if (version == m_lastVersion) {
+			m_dataChanged = false;
 			return true;  // no changes
 		}
 		m_lastVersion = version;
+		m_dataChanged = true;
 		m_slotName = apState.getStringAttribute("slot_name");
 		m_campaignId = apState.getStringAttribute("campaign_id");
 		m_trapSeverity = apState.getIntAttribute("trap_severity");
@@ -554,9 +567,12 @@ class APTracker : Tracker {
 	// ============================================================
 	protected bool pollAndApplyDelta() {
 		if (!readAPState()) return false;
-		bool ok = applyAllItems();
-		displayNotifications();
-		return ok;
+		if (m_dataChanged) {
+			bool ok = applyAllItems();
+			displayNotifications();
+			return ok;
+		}
+		return true;
 	}
 
 	// ============================================================
@@ -585,57 +601,58 @@ class APTracker : Tracker {
 	//  ITEM APPLICATION
 	// ============================================================
 
-	// ---- Rank (XP reward) ----
+	// ---- Rank (XP management — xp_reward positive only, with cooldown) ----
 	protected void applyRank() {
 		if (m_playerCharacterId < 0) return;
 		if (m_apRankLevel < 0) return;
 
-		int rankLevel = m_apRankLevel;
-		if (rankLevel >= int(RANK_XP_THRESHOLDS.size())) {
-			rankLevel = int(RANK_XP_THRESHOLDS.size()) - 1;  // clamp to max (Major)
-		}
+		// Cooldown: wait for previous xp_reward to be reflected in getCharacterInfo
+		if (m_xpCooldownTimer > 0.0) return;
 
-		const XmlElement@ charInfo = getCharacterInfo(m_metagame, m_playerCharacterId);
-		if (charInfo is null) return;
-
-		float currentXp = charInfo.getFloatAttribute("xp");
-		float targetXp = RANK_XP_THRESHOLDS[rankLevel];
-
-		float delta = targetXp - currentXp;
-		if (delta > 0.001) {
-			string cmd = "<command class='xp_reward' character_id='" +
-				m_playerCharacterId + "' reward='" + delta + "' />";
-			m_metagame.getComms().send(cmd);
-			_log("[AP] Applied XP reward: +" + delta + " (target rank " + m_apRankLevel + ")");
-		}
-	}
-
-	// ---- XP Boost (bonus XP on top of rank) ----
-	protected void applyXPBoost() {
-		if (m_playerCharacterId < 0 || m_xpBoost <= 0) return;
-
-		const XmlElement@ charInfo = getCharacterInfo(m_metagame, m_playerCharacterId);
-		if (charInfo is null) return;
-
-		float currentXp = charInfo.getFloatAttribute("xp");
-		// XP boost target = rank threshold + boost amount
-		float rankXp = 0.0;
 		int rankLevel = m_apRankLevel;
 		if (rankLevel >= int(RANK_XP_THRESHOLDS.size())) {
 			rankLevel = int(RANK_XP_THRESHOLDS.size()) - 1;
 		}
-		if (rankLevel >= 0) {
-			rankXp = RANK_XP_THRESHOLDS[rankLevel];
+
+		float targetXp = RANK_XP_THRESHOLDS[rankLevel];
+
+		// Read current XP — MUST succeed, otherwise skip to avoid accumulating XP
+		const XmlElement@ charInfo = getCharacterInfo(m_metagame, m_playerCharacterId);
+		if (charInfo is null) {
+			_log("[AP] applyRank: getCharacterInfo returned null, skipping");
+			return;
 		}
-		float targetXp = rankXp + float(m_xpBoost);
+		float currentXp = charInfo.getFloatAttribute("xp");
 
 		float delta = targetXp - currentXp;
-		if (delta > 0.001) {
+		// Only send positive — can't reduce XP
+		if (delta > 0.005) {
 			string cmd = "<command class='xp_reward' character_id='" +
 				m_playerCharacterId + "' reward='" + delta + "' />";
 			m_metagame.getComms().send(cmd);
-			_log("[AP] Applied XP boost: +" + delta + " (boost=" + m_xpBoost + ")");
+			_log("[AP] XP: current=" + currentXp + " target=" + targetXp +
+				" sent xp_reward=" + delta + " (rank " + rankLevel + ")");
+			// Wait 5 seconds before next XP operation so the game processes this one
+			m_xpCooldownTimer = 5.0;
 		}
+
+		m_lastAppliedRank = rankLevel;
+	}
+
+	// ---- XP Boost (one-shot per new boost received) ----
+	protected void applyXPBoost() {
+		if (m_playerCharacterId < 0 || m_xpBoost <= 0) return;
+		if (m_xpBoost == m_lastAppliedXPBoost) return;
+
+		int boostDelta = m_xpBoost - m_lastAppliedXPBoost;
+		if (boostDelta > 0) {
+			float xpToSend = float(boostDelta) * 0.01;
+			string cmd = "<command class='xp_reward' character_id='" +
+				m_playerCharacterId + "' reward='" + xpToSend + "' />";
+			m_metagame.getComms().send(cmd);
+			_log("[AP] XP boost +" + boostDelta + ", sent xp_reward=" + xpToSend);
+		}
+		m_lastAppliedXPBoost = m_xpBoost;
 	}
 
 	// ---- Medikit Pack heals ----
@@ -686,7 +703,9 @@ class APTracker : Tracker {
 	// Consolidates weapons, calls, equipment, throwables, grenades, vests, costumes
 	// into a single faction_resources command to avoid per-type overwrites.
 	protected void applyAllFactionResources() {
-		string cmd = "<command class='faction_resources' faction_id='0'>";
+		// Use individual commands per item like vanilla resource_unlocker does.
+		// Sending one massive command doesn't work reliably.
+		_log("[AP] applyAllFactionResources: weaponShuffle=" + m_weaponShuffle + " mode=" + m_weaponMode + " unlockedKeys=" + m_unlockedWeaponKeys.getSize());
 
 		// -- Weapons --
 		if (m_weaponShuffle) {
@@ -698,24 +717,20 @@ class APTracker : Tracker {
 					WEAPON_CATEGORY_FILES.get(catKey, files);
 					for (uint w = 0; w < files.size(); w++) {
 						bool enabled = unlocked || m_voucherUnlockedFiles.exists(files[w]);
-						cmd += "<weapon key='" + files[w] + "' enabled='" +
-							(enabled ? "1" : "0") + "' />";
+						sendFactionResource("weapon", files[w], enabled);
 					}
 				}
 			} else {
-				// individual mode
 				for (uint w = 0; w < ALL_WEAPON_FILES.size(); w++) {
 					bool unlocked = m_unlockedWeaponKeys.exists(ALL_WEAPON_FILES[w]) ||
 					                m_voucherUnlockedFiles.exists(ALL_WEAPON_FILES[w]);
-					cmd += "<weapon key='" + ALL_WEAPON_FILES[w] + "' enabled='" +
-						(unlocked ? "1" : "0") + "' />";
+					sendFactionResource("weapon", ALL_WEAPON_FILES[w], unlocked);
 				}
 			}
 		} else if (m_voucherUnlockedFiles.getKeys().size() > 0) {
-			// weapon_shuffle OFF: only voucher weapons
 			array<string> keys = m_voucherUnlockedFiles.getKeys();
 			for (uint i = 0; i < keys.size(); i++) {
-				cmd += "<weapon key='" + keys[i] + "' enabled='1' />";
+				sendFactionResource("weapon", keys[i], true);
 			}
 		}
 
@@ -724,13 +739,11 @@ class APTracker : Tracker {
 			for (uint i = 0; i < ALL_CALL_FILES.size(); i++) {
 				bool unlocked = !m_radioJammerActive && m_radioMasterUnlocked &&
 				                m_unlockedCallFiles.exists(ALL_CALL_FILES[i]);
-				cmd += "<call key='" + ALL_CALL_FILES[i] + "' enabled='" +
-					(unlocked ? "1" : "0") + "' />";
+				sendFactionResource("call", ALL_CALL_FILES[i], unlocked);
 			}
 		} else if (m_radioJammerActive) {
-			// radio not shuffled but jammer active: disable all calls
 			for (uint i = 0; i < ALL_CALL_FILES.size(); i++) {
-				cmd += "<call key='" + ALL_CALL_FILES[i] + "' enabled='0' />";
+				sendFactionResource("call", ALL_CALL_FILES[i], false);
 			}
 		}
 
@@ -740,8 +753,7 @@ class APTracker : Tracker {
 			bool unlocked = m_unlockedEquipFiles.exists(file);
 			string type;
 			EQUIPMENT_FILE_TO_TYPE.get(file, type);
-			cmd += "<" + type + " key='" + file + "' enabled='" +
-				(unlocked ? "1" : "0") + "' />";
+			sendFactionResource(type, file, unlocked);
 		}
 
 		// -- Throwables (mixed types: projectile, weapon) --
@@ -750,8 +762,7 @@ class APTracker : Tracker {
 			bool unlocked = m_unlockedThrowFiles.exists(file);
 			string type;
 			THROWABLE_FILE_TO_TYPE.get(file, type);
-			cmd += "<" + type + " key='" + file + "' enabled='" +
-				(unlocked ? "1" : "0") + "' />";
+			sendFactionResource(type, file, unlocked);
 		}
 
 		// -- Vanilla grenades --
@@ -759,14 +770,12 @@ class APTracker : Tracker {
 			if (m_grenadeMode == "grouped") {
 				bool unlocked = m_unlockedVanillaGrenades.exists("all");
 				for (uint i = 0; i < VANILLA_GRENADE_FILES.size(); i++) {
-					cmd += "<projectile key='" + VANILLA_GRENADE_FILES[i] + "' enabled='" +
-						(unlocked ? "1" : "0") + "' />";
+					sendFactionResource("projectile", VANILLA_GRENADE_FILES[i], unlocked);
 				}
 			} else {
 				for (uint i = 0; i < VANILLA_GRENADE_FILES.size(); i++) {
 					bool unlocked = m_unlockedVanillaGrenades.exists(VANILLA_GRENADE_FILES[i]);
-					cmd += "<projectile key='" + VANILLA_GRENADE_FILES[i] + "' enabled='" +
-						(unlocked ? "1" : "0") + "' />";
+					sendFactionResource("projectile", VANILLA_GRENADE_FILES[i], unlocked);
 				}
 			}
 		}
@@ -776,14 +785,12 @@ class APTracker : Tracker {
 			if (m_vestMode == "grouped") {
 				bool unlocked = m_unlockedVanillaVests.exists("all");
 				for (uint i = 0; i < VANILLA_VEST_FILES.size(); i++) {
-					cmd += "<carry_item key='" + VANILLA_VEST_FILES[i] + "' enabled='" +
-						(unlocked ? "1" : "0") + "' />";
+					sendFactionResource("carry_item", VANILLA_VEST_FILES[i], unlocked);
 				}
 			} else {
 				for (uint i = 0; i < VANILLA_VEST_FILES.size(); i++) {
 					bool unlocked = m_unlockedVanillaVests.exists(VANILLA_VEST_FILES[i]);
-					cmd += "<carry_item key='" + VANILLA_VEST_FILES[i] + "' enabled='" +
-						(unlocked ? "1" : "0") + "' />";
+					sendFactionResource("carry_item", VANILLA_VEST_FILES[i], unlocked);
 				}
 			}
 		}
@@ -793,20 +800,30 @@ class APTracker : Tracker {
 			if (m_costumeMode == "grouped") {
 				bool unlocked = m_unlockedVanillaCostumes.exists("all");
 				for (uint i = 0; i < VANILLA_COSTUME_FILES.size(); i++) {
-					cmd += "<carry_item key='" + VANILLA_COSTUME_FILES[i] + "' enabled='" +
-						(unlocked ? "1" : "0") + "' />";
+					sendFactionResource("carry_item", VANILLA_COSTUME_FILES[i], unlocked);
 				}
 			} else {
 				for (uint i = 0; i < VANILLA_COSTUME_FILES.size(); i++) {
 					bool unlocked = m_unlockedVanillaCostumes.exists(VANILLA_COSTUME_FILES[i]);
-					cmd += "<carry_item key='" + VANILLA_COSTUME_FILES[i] + "' enabled='" +
-						(unlocked ? "1" : "0") + "' />";
+					sendFactionResource("carry_item", VANILLA_COSTUME_FILES[i], unlocked);
 				}
 			}
 		}
+	}
 
-		cmd += "</command>";
-		m_metagame.getComms().send(cmd);
+	protected void sendFactionResource(string type, string key, bool enabled) {
+		XmlElement command("command");
+		command.setStringAttribute("class", "faction_resources");
+		command.setStringAttribute("soldier_group_name", "default");
+		command.setIntAttribute("faction_id", 0);
+		XmlElement item(type);
+		item.setStringAttribute("key", key);
+		item.setBoolAttribute("enabled", enabled);
+		command.appendChild(item);
+		if (enabled) {
+			_log("[AP] faction_resource: " + type + " " + key + " enabled=" + (enabled ? "1" : "0"));
+		}
+		m_metagame.getComms().send(command);
 	}
 
 	// ---- RP delivery (gradual) ----
@@ -987,22 +1004,12 @@ class APTracker : Tracker {
 				}
 			}
 		}
-		else if (trapKey == "squad_desertion") {
-			int killCount = 3;
-			if (m_trapSeverity == 0) killCount = 1;
-			else if (m_trapSeverity == 2) killCount = 5;
-			sendChat("TRAP: Squad Desertion! Your squad has abandoned you.");
-			killNearbyFriendlies(killCount);
-		}
 	}
 
 	protected void disableAllCalls() {
-		string cmd = "<command class='faction_resources' faction_id='0'>";
 		for (uint i = 0; i < ALL_CALL_FILES.size(); i++) {
-			cmd += "<call key='" + ALL_CALL_FILES[i] + "' enabled='0' />";
+			sendFactionResource("call", ALL_CALL_FILES[i], false);
 		}
-		cmd += "</command>";
-		m_metagame.getComms().send(cmd);
 	}
 
 	protected void killNearbyFriendlies(int count) {
@@ -1057,8 +1064,8 @@ class APTracker : Tracker {
 		if (m_playerCharacterId < 0 || !m_playerAlive) return;
 
 		if (m_deathLinkMode == "random_trap") {
-			array<string> trapKeys = {"demotion", "radio_jammer", "friendly_fire", "squad_desertion"};
-			string pick = trapKeys[rand() % trapKeys.size()];
+			array<string> trapKeys = {"demotion", "radio_jammer", "friendly_fire"};
+			string pick = trapKeys[rand(0, int(trapKeys.size()) - 1)];
 			sendChat("DEATH LINK: Another player has fallen... (trap: " + pick + ")");
 			executeTrap(pick);
 		} else {
@@ -1430,6 +1437,9 @@ class APTracker : Tracker {
 		// Delivery counters (briefcase/laptop)
 		cmd += "<deliveries briefcases='" + g_apBriefcaseCount + "' laptops='" + g_apLaptopCount + "' />";
 
+		// XP tracking (to avoid re-sending xp_reward on reconnect)
+		cmd += "<xp_tracking last_rank='" + m_lastAppliedRank + "' last_xp_boost='" + m_lastAppliedXPBoost + "' />";
+
 		cmd += "</ap_mod_state>";
 		cmd += "</command>";
 		m_metagame.getComms().send(cmd);
@@ -1545,6 +1555,15 @@ class APTracker : Tracker {
 			g_apLaptopCount = delElem.getIntAttribute("laptops");
 			_log("[AP] Restored delivery counters: " + g_apBriefcaseCount +
 				" briefcases, " + g_apLaptopCount + " laptops");
+		}
+
+		// Restore XP tracking
+		const XmlElement@ xpElem = modState.getFirstElementByTagName("xp_tracking");
+		if (xpElem !is null) {
+			m_lastAppliedRank = xpElem.getIntAttribute("last_rank");
+			m_lastAppliedXPBoost = xpElem.getIntAttribute("last_xp_boost");
+			_log("[AP] Restored XP tracking: last_rank=" + m_lastAppliedRank +
+				", last_xp_boost=" + m_lastAppliedXPBoost);
 		}
 	}
 

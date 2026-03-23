@@ -227,17 +227,20 @@ void initAPData() {
 	}
 
 	{
+		// Displayed XP = internal * ~10000
+		// Target: 200 base + 1000 per squad slot
+		// Internal: 0.02 + rank * 0.1
 		array<float> tmp = {
-			0.0,    // Private
-			0.05,   // Private 1st Class
-			0.1,    // Corporal
-			0.2,    // Sergeant
-			0.3,    // Staff Sergeant
-			0.4,    // Staff Sergeant 1st Class
-			0.6,    // 2nd Lieutenant
-			0.8,    // Lieutenant
-			1.0,    // Captain
-			1.2     // Major
+			0.02,   // Rank 0: 200 XP displayed
+			0.12,   // Rank 1: 1200 XP
+			0.22,   // Rank 2: 2200 XP
+			0.32,   // Rank 3: 3200 XP
+			0.42,   // Rank 4: 4200 XP
+			0.52,   // Rank 5: 5200 XP
+			0.62,   // Rank 6: 6200 XP
+			0.72,   // Rank 7: 7200 XP
+			0.82,   // Rank 8: 8200 XP
+			0.92    // Rank 9: 9200 XP
 		};
 		RANK_XP_THRESHOLDS = tmp;
 	}
@@ -255,7 +258,21 @@ void initAPData() {
 		array<string> w = {
 			"ak47.weapon", "sg552.weapon", "m16a4.weapon",
 			"l85a2.weapon", "g36.weapon", "famasg1.weapon",
-			"f2000.weapon", "xm8.weapon"
+			"f2000.weapon", "xm8.weapon",
+			"steyr_aug.weapon",
+			"ac556.weapon", "ac556_b.weapon", "aks74u.weapon",
+			"an94.weapon", "an94_burst.weapon",
+			"ar15.weapon", "ar15_th.weapon", "asm_val.weapon",
+			"beowulf.weapon", "fal.weapon", "fal_bayonet.weapon",
+			"g3_1x.weapon", "g3_3x.weapon",
+			"galil.weapon", "galil_b.weapon", "gilboa_dbr.weapon",
+			"hcar_3x.weapon", "mk47.weapon", "p416.weapon",
+			"qbz95.weapon", "qbz95_us.weapon",
+			"sa81.weapon", "sa81_o.weapon", "stg44.weapon", "tkb059.weapon",
+			"g36_w_ag36.weapon", "m16a4_w_m203.weapon",
+			"ots14.weapon", "ash12.weapon", "aks_tishina.weapon",
+			"scar_mk13.weapon", "qts11.weapon", "mpt76_ak40.weapon",
+			"m4a1_m26.weapon"
 		};
 		WEAPON_CATEGORY_FILES.set("assault_rifles", w);
 	}
@@ -263,7 +280,11 @@ void initAPData() {
 		array<string> w = {
 			"pkm.weapon", "m240.weapon", "imi_negev.weapon",
 			"m60e4.weapon", "rpd.weapon", "ultimax.weapon",
-			"dp28.weapon", "stoner_lmg.weapon", "m249.weapon", "mg42.weapon"
+			"dp28.weapon", "stoner_lmg.weapon", "m249.weapon", "mg42.weapon",
+			"dp28_s.weapon", "m249_s.weapon", "ultimax_m.weapon", "rpd_b.weapon",
+			"ares_shrike.weapon", "pecheneg_bullpup.weapon", "stoner62.weapon",
+			"ares_shrike_s.weapon", "gun_lewis.weapon", "m16a4_support.weapon",
+			"qjz89.weapon", "rpk16.weapon", "rpk16_long.weapon"
 		};
 		WEAPON_CATEGORY_FILES.set("machineguns", w);
 	}
@@ -272,7 +293,15 @@ void initAPData() {
 			"dragunov_svd.weapon", "m24_a2.weapon", "psg90.weapon",
 			"barrett_m107.weapon", "sv98.weapon", "tac50.weapon",
 			"vss_vintorez.weapon", "gepard_m6_lynx.weapon",
-			"m14ebr_s.weapon", "sks.weapon", "apr.weapon"
+			"m14ebr_s.weapon", "sks.weapon", "apr.weapon",
+			"sv98_p.weapon", "tac50_e.weapon", "m14ebr.weapon", "m14ebr_d.weapon", "sks_fire.weapon",
+			"scarssr.weapon", "lahti_l39.weapon",
+			"apr308s.weapon", "apr308s_p.weapon",
+			"fd338.weapon", "fd338sd.weapon",
+			"kar98k.weapon", "kar98k_b.weapon",
+			"m14k.weapon", "m14k_carry.weapon",
+			"m1_garand_m.weapon", "m200.weapon",
+			"sbl.weapon", "truvelo_amris.weapon", "vks.weapon"
 		};
 		WEAPON_CATEGORY_FILES.set("sniper_rifles", w);
 	}
@@ -281,7 +310,12 @@ void initAPData() {
 			"qcw-05.weapon", "mp5sd.weapon", "scorpion-evo.weapon",
 			"p90.weapon", "mp7.weapon", "mac10.weapon",
 			"mac10sd.weapon", "honey_badger.weapon", "aek_919k.weapon",
-			"mini_uzi.weapon", "steyr_tmp.weapon", "bizon.weapon"
+			"mini_uzi.weapon", "steyr_tmp.weapon", "bizon.weapon",
+			"kriss_vector.weapon",
+			"fmg9.weapon", "fmg9_box.weapon", "gun_tommy.weapon",
+			"mgv176.weapon", "mp40.weapon", "mpx.weapon", "mpx_hp.weapon",
+			"pdx_r.weapon", "suomi.weapon", "ump40.weapon",
+			"mp7_isl200.weapon"
 		};
 		WEAPON_CATEGORY_FILES.set("smgs", w);
 	}
@@ -289,14 +323,21 @@ void initAPData() {
 		array<string> w = {
 			"qbs-09.weapon", "mossberg.weapon", "spas-12.weapon",
 			"aa12_frag.weapon", "benelli_m4.weapon", "jackhammer.weapon",
-			"ksg_b.weapon", "origin_12.weapon", "uts15.weapon"
+			"ksg_b.weapon", "origin_12.weapon", "uts15.weapon",
+			"ksg_s.weapon", "origin_12_s.weapon", "benelli_m4_supp.weapon",
+			"ns2000.weapon", "sawnoff.weapon",
+			"benelli_m3.weapon", "doublebarrel.weapon", "doublebarrel_alt.weapon",
+			"dragons_breath.weapon", "gen12_r.weapon", "ks23_b.weapon",
+			"mag7.weapon", "supershorty.weapon"
 		};
 		WEAPON_CATEGORY_FILES.set("shotguns", w);
 	}
 	{
 		array<string> w = {
 			"rpg-7.weapon", "m72_law.weapon", "m2_carlgustav.weapon",
-			"javelin.weapon", "smaw.weapon"
+			"javelin.weapon", "smaw.weapon",
+			"javelin_ap.weapon",
+			"dp64.weapon", "fhj01.weapon", "m202_flash.weapon", "pf98.weapon"
 		};
 		WEAPON_CATEGORY_FILES.set("rocket_launchers", w);
 	}
@@ -304,7 +345,8 @@ void initAPData() {
 		array<string> w = {
 			"rgm40_ai.weapon", "ak47_w_gp25_ai.weapon",
 			"milkor_mgl.weapon", "m79.weapon", "chinalake.weapon", "gm94.weapon",
-			"mgl_flasher.weapon"
+			"mgl_flasher.weapon",
+			"paw20.weapon", "rg6_a.weapon", "rg6_s.weapon", "qlz87_b.weapon"
 		};
 		WEAPON_CATEGORY_FILES.set("grenade_launchers", w);
 	}
@@ -312,7 +354,12 @@ void initAPData() {
 		array<string> w = {
 			"pb.weapon", "beretta_m9.weapon", "glock17.weapon",
 			"beretta_m9_s.weapon", "glock17_s.weapon",
-			"desert_eagle_gold.weapon", "model_29.weapon"
+			"desert_eagle_gold.weapon", "model_29.weapon",
+			"beretta_93r.weapon",
+			"chiapparhino.weapon", "enforcer.weapon",
+			"fn57.weapon", "fn57_s.weapon",
+			"kulakov.weapon", "l30p.weapon", "m712.weapon",
+			"mk23.weapon", "model_500.weapon", "rsh_12.weapon", "tti.weapon"
 		};
 		WEAPON_CATEGORY_FILES.set("pistols", w);
 	}
@@ -321,7 +368,10 @@ void initAPData() {
 			"flamethrower.weapon", "compound_bow.weapon",
 			"golden_ak47.weapon", "golden_dragunov_svd.weapon",
 			"golden_mp5sd.weapon", "golden_knife.weapon",
-			"pepperdust.weapon"
+			"pepperdust.weapon",
+			"compound_bow_alt.weapon",
+			"microgun.weapon", "chain_saw.weapon", "chainsaw.weapon",
+			"hunting_crossbow_a.weapon", "hunting_crossbow_h.weapon"
 		};
 		WEAPON_CATEGORY_FILES.set("special", w);
 	}

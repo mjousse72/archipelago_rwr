@@ -374,14 +374,13 @@ class TestResources(unittest.TestCase):
 
 class TestTraps(unittest.TestCase):
     def test_traps_pending(self) -> None:
-        items = ["Radio Jammer", "Friendly Fire Incident", "Squad Desertion"]
+        items = ["Radio Jammer", "Friendly Fire Incident"]
         state, counter = build_game_state(items=items, slot_data=_make_slot_data(), acked_traps={2})
-        self.assertEqual(counter, 3)
-        self.assertEqual(len(state.pending_traps), 2)
+        self.assertEqual(counter, 2)
+        self.assertEqual(len(state.pending_traps), 1)
         trap_ids = [t[0] for t in state.pending_traps]
         self.assertIn(1, trap_ids)
         self.assertNotIn(2, trap_ids)
-        self.assertIn(3, trap_ids)
 
     def test_trap_keys(self) -> None:
         for trap_name, expected_key in TRAP_NAME_TO_KEY.items():
@@ -392,7 +391,7 @@ class TestTraps(unittest.TestCase):
             self.assertEqual(actual_key, expected_key, f"Trap {trap_name}")
 
     def test_all_traps_acked(self) -> None:
-        items = ["Radio Jammer", "Squad Desertion"]
+        items = ["Radio Jammer", "Friendly Fire Incident"]
         state, counter = build_game_state(items=items, slot_data=_make_slot_data(), acked_traps={1, 2})
         self.assertEqual(counter, 2)
         self.assertEqual(len(state.pending_traps), 0)

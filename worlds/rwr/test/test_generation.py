@@ -189,25 +189,19 @@ class TestWeaponShuffleIndividual(RWRTestBase):
     options = {"weapon_shuffle": "individual", "base_capture_mode": "individual"}
 
     def test_has_individual_weapons(self) -> None:
+        """Pool should contain a substantial number of individual weapons.
+
+        With 196 weapons and a budget system, not all weapons fit every seed.
+        We just verify that a good chunk made it in.
+        """
+        from worlds.rwr.items import INDIVIDUAL_WEAPONS
         item_names = {
             item.name for item in self.multiworld.itempool
             if item.player == self.player
         }
-        self.assertIn("AK-47", item_names)
-        self.assertIn("M249", item_names)
-        self.assertIn("Barrett M107", item_names)
-        self.assertIn("RPG-7", item_names)
-        self.assertIn("Flamethrower", item_names)
-        # Rare weapons (added in Phase 6)
-        self.assertIn("F2000", item_names)
-        self.assertIn("XM8", item_names)
-        self.assertIn("APR", item_names)
-        self.assertIn("UTS15", item_names)
-        self.assertIn("Desert Eagle Gold", item_names)
-        self.assertIn("Model 29", item_names)
-        self.assertIn("MGL Flasher", item_names)
-        self.assertIn("Golden Knife", item_names)
-        self.assertIn("Pepperdust", item_names)
+        weapon_names_in_pool = item_names & set(INDIVIDUAL_WEAPONS.keys())
+        self.assertGreater(len(weapon_names_in_pool), 50,
+                           f"Only {len(weapon_names_in_pool)} weapons in pool, expected > 50")
 
     def test_no_category_items(self) -> None:
         item_names = {
@@ -216,45 +210,6 @@ class TestWeaponShuffleIndividual(RWRTestBase):
         }
         self.assertNotIn("Assault Rifles", item_names)
         self.assertNotIn("Machineguns", item_names)
-
-    def test_items_match(self) -> None:
-        player_locations = [
-            loc for loc in self.multiworld.get_locations()
-            if loc.player == self.player and loc.address is not None
-        ]
-        player_items = [
-            item for item in self.multiworld.itempool
-            if item.player == self.player
-        ]
-        self.assertEqual(len(player_items), len(player_locations))
-
-
-class TestBaseCaptureNone(RWRTestBase):
-    """No base capture locations — needs deliveries+briefcases for enough locations."""
-    options = {
-        "base_capture_mode": "none",
-        "shuffle_radio_calls": False,
-        "shuffle_deliveries": True,
-        "shuffle_briefcases": True,
-    }
-
-    def test_no_capture_locations(self) -> None:
-        location_names = {
-            loc.name for loc in self.multiworld.get_locations()
-            if loc.player == self.player
-        }
-        # No progressive captures
-        for name in location_names:
-            self.assertFalse(
-                name.startswith("Captured ") and "bases on" in name,
-                f"Found progressive capture location in none mode: {name}",
-            )
-        # No individual captures
-        for name in location_names:
-            self.assertFalse(
-                name.startswith("Captured ") and "(" in name,
-                f"Found individual capture location in none mode: {name}",
-            )
 
     def test_items_match(self) -> None:
         player_locations = [
@@ -351,7 +306,7 @@ class TestTrapChanceZero(RWRTestBase):
     options = {"trap_chance": 0}
 
     def test_no_traps(self) -> None:
-        trap_names = {"Demotion", "Radio Jammer", "Friendly Fire Incident", "Squad Desertion"}
+        trap_names = {"Demotion", "Radio Jammer", "Friendly Fire Incident"}
         item_names = [
             item.name for item in self.multiworld.itempool
             if item.player == self.player
@@ -410,10 +365,11 @@ class TestMaximumChecks(RWRTestBase):
 
 
 class TestMinimumChecks(RWRTestBase):
-    """Minimum viable configuration: no weapons, no bases, just conquests + side missions."""
+    """Minimum viable configuration: no weapons, progressive bases, just conquests + side missions."""
     options = {
         "weapon_shuffle": "none",
-        "base_capture_mode": "none",
+        "base_capture_mode": "progressive",
+        "base_captures_per_map": 1,
         "include_side_missions": True,
         "shuffle_radio_calls": False,
         "grenade_shuffle": "none",
@@ -425,8 +381,8 @@ class TestMinimumChecks(RWRTestBase):
             loc for loc in self.multiworld.get_locations()
             if loc.player == self.player and loc.address is not None
         ]
-        # 12 conquests + 10 side missions = 22
-        self.assertEqual(len(player_locations), 22)
+        # 12 conquests + 12 progressive captures (1/map) + 10 side missions = 34
+        self.assertEqual(len(player_locations), 34)
 
     def test_items_match(self) -> None:
         player_locations = [
@@ -806,6 +762,76 @@ class TestAllDeliveriesEnabled(RWRTestBase):
             if item.player == self.player
         ]
         self.assertEqual(len(player_items), len(player_locations))
+
+
+class TestDeliveryProgressionExcluded(RWRTestBase):
+    """With base captures enabled, delivery locations must never contain progression items."""
+    options = {
+        "shuffle_deliveries": True,
+        "shuffle_briefcases": True,
+        "weapon_shuffle": "individual",
+        "base_capture_mode": "progressive",
+        "base_captures_per_map": 5,
+        "include_side_missions": True,
+        "rp_shop": True,
+        "rp_shop_per_map": 5,
+    }
+
+    def _delivery_locations(self):
+        return [
+            loc for loc in self.multiworld.get_locations()
+            if loc.player == self.player
+            and loc.address is not None
+            and (
+                loc.name.startswith("Delivered ")
+                or loc.name.startswith("Briefcase Delivery")
+                or loc.name.startswith("Laptop Delivery")
+            )
+        ]
+
+    def test_delivery_locations_reject_progression(self) -> None:
+        """All delivery locations should reject progression items via item_rule."""
+        from BaseClasses import ItemClassification
+        from worlds.rwr.items import RWRItem
+        fake_key = RWRItem("Test Key", ItemClassification.progression, 999, self.player)
+        fake_filler = RWRItem("Test Filler", ItemClassification.filler, 998, self.player)
+        for loc in self._delivery_locations():
+            self.assertFalse(
+                loc.item_rule(fake_key),
+                f"{loc.name} should reject progression items",
+            )
+            self.assertTrue(
+                loc.item_rule(fake_filler),
+                f"{loc.name} should accept filler items",
+            )
+
+    def test_no_progression_items_in_deliveries(self) -> None:
+        """After fill, no delivery location should hold a progression item."""
+        from BaseClasses import ItemClassification
+        for loc in self._delivery_locations():
+            if loc.item is not None:
+                self.assertFalse(
+                    loc.item.classification & ItemClassification.progression,
+                    f"{loc.name} contains progression item {loc.item.name}",
+                )
+
+    def test_map_keys_not_in_deliveries(self) -> None:
+        """Map keys must never be placed in delivery locations."""
+        for loc in self._delivery_locations():
+            if loc.item is not None:
+                self.assertFalse(
+                    loc.item.name.endswith(" Key"),
+                    f"{loc.name} contains map key {loc.item.name}",
+                )
+
+    def test_squadmate_slots_not_in_deliveries(self) -> None:
+        """Squadmate Slots must never be placed in delivery locations."""
+        for loc in self._delivery_locations():
+            if loc.item is not None:
+                self.assertNotEqual(
+                    loc.item.name, "Squadmate Slot",
+                    f"{loc.name} contains Squadmate Slot",
+                )
 
 
 class TestSlotDataDeliveryKeys(RWRTestBase):

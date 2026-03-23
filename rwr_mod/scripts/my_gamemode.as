@@ -12,7 +12,13 @@ class MyGameMode : GameModeCampaign {
 
 	// --------------------------------------------
 	MyGameMode(UserSettings@ settings) {
+		// Force initial XP to 0 — AP mod controls XP via xp_reward
+		settings.m_initialXp = 0.0;
+		settings.m_initialRp = 0.0;
+		// Force xp_multiplier to 1.0 so xp_reward gives exact amounts
+		settings.m_xpFactor = 1.0;
 		super(settings);
+		_log("[AP] Forced initial_xp=0 initial_rp=0 xp_factor=1.0 (was preset: " + settings.m_presetId + ")");
 	}
 
 	// --------------------------------------------

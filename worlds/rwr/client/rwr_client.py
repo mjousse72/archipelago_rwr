@@ -109,7 +109,7 @@ class RWRContext(CommonContext):
         # Register DeathLink tag if the option is enabled
         if self.slot_data.get("death_link"):
             self.tags.add("DeathLink")
-            asyncio.create_task(self.update_tags())
+            asyncio.create_task(self.send_msgs([{"cmd": "ConnectUpdate", "tags": list(self.tags)}]))
             logger.info("DeathLink enabled, tag registered")
 
         # Set campaign ID for per-campaign saves (seed_name + slot_name)

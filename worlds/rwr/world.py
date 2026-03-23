@@ -81,6 +81,7 @@ class RWRWorld(World):
             VANILLA_VEST_NAME_TO_FILE,
             WEAPON_CATEGORY_NAME_TO_KEY,
             WEAPON_CATEGORY_TO_FILES,
+            WEAPON_COMPANION_FILES,
             WEAPON_NAME_TO_FILE,
         )
 
@@ -112,6 +113,7 @@ class RWRWorld(World):
         slot["weapon_category_to_files"] = WEAPON_CATEGORY_TO_FILES
         slot["weapon_category_name_to_key"] = WEAPON_CATEGORY_NAME_TO_KEY
         slot["weapon_name_to_file"] = WEAPON_NAME_TO_FILE
+        slot["weapon_companion_files"] = WEAPON_COMPANION_FILES
         slot["call_mapping"] = RADIO_CALL_TO_FILES
         slot["equipment_mapping"] = EQUIPMENT_TO_FILE
         slot["throwable_mapping"] = THROWABLE_TO_FILE

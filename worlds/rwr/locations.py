@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from BaseClasses import Location
+from BaseClasses import ItemClassification, Location
 
 if TYPE_CHECKING:
     from . import RWRWorld
@@ -125,18 +125,19 @@ BASES_BY_MAP: dict[str, list[str]] = {
     ],
 }
 
-# XP thresholds for each rank (scale 0.0 to ~1.2)
+# XP thresholds for each rank (scale 0.0 to 90.0, spaced by 10.0)
+# With squad_size_xp_cap="90.0", each rank = exactly 1 squad member
 RANK_XP_THRESHOLDS: dict[str, float] = {
     "Private": 0.0,
-    "Private 1st Class": 0.05,
-    "Corporal": 0.1,
-    "Sergeant": 0.2,
-    "Staff Sergeant": 0.3,
-    "Staff Sergeant 1st Class": 0.4,
-    "2nd Lieutenant": 0.6,
-    "Lieutenant": 0.8,
-    "Captain": 1.0,
-    "Major": 1.2,
+    "Private 1st Class": 10.0,
+    "Corporal": 20.0,
+    "Sergeant": 30.0,
+    "Staff Sergeant": 40.0,
+    "Staff Sergeant 1st Class": 50.0,
+    "2nd Lieutenant": 60.0,
+    "Lieutenant": 70.0,
+    "Captain": 80.0,
+    "Major": 90.0,
 }
 
 # --- Side missions ---
@@ -312,6 +313,8 @@ def create_locations_for_region(world: RWRWorld, region_name: str) -> None:
         for loc_name, _ in _build_progressive_capture_locations(captures_per_map):
             active_progressive.add(loc_name)
 
+    _is_delivery = _DELIVERY_NAMES | _BRIEFCASE_NAMES | _LAPTOP_NAMES
+
     for loc_name, loc_region in ALL_LOCATIONS:
         if loc_region != region_name:
             continue
@@ -351,7 +354,10 @@ def create_locations_for_region(world: RWRWorld, region_name: str) -> None:
             if shop_num > rp_shop_per_map:
                 continue
 
-        region.add_locations(
-            {loc_name: LOCATION_NAME_TO_ID[loc_name]},
-            RWRLocation,
-        )
+        loc = RWRLocation(world.player, loc_name, LOCATION_NAME_TO_ID[loc_name], region)
+
+        # Deliveries are long/random — block progression items (keys, slots, etc.)
+        if loc_name in _is_delivery:
+            loc.item_rule = lambda item: not bool(item.classification & ItemClassification.progression)
+
+        region.locations.append(loc)
