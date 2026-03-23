@@ -9,8 +9,9 @@ An [Archipelago](https://archipelago.gg/) integration for [Running with Rifles](
 - **Squadmate Slots** — each one increases your rank by 1, unlocking more squad members
 - **Radio calls** — need both the Radio master item and individual call items
 - **Equipment, throwables, grenades, vests, costumes** — optionally shuffled
-- **Traps** — Demotion, Radio Jammer, Friendly Fire, Squad Desertion
-- **Death Link** — supported
+- **RP Shop** — spend RP to purchase checks via `/apbuy`
+- **Traps** — Demotion, Radio Jammer, Friendly Fire
+- **Death Link** — supported, with optional random trap mode
 
 ### Goals
 
@@ -61,11 +62,20 @@ This generates:
 |--------|--------|-------------|
 | `goal` | campaign_complete, maps_conquered | Win condition |
 | `maps_to_conquer` | 1–10 | Maps needed for maps_conquered goal |
-| `weapon_shuffle` | none, categories, individual | How weapons are randomized |
+| `weapon_shuffle` | none, categories, individual | How weapons are randomized (~196 weapons in individual mode) |
 | `include_side_missions` | on/off | Add side mission locations |
-| `base_capture_mode` | progressive, individual, none | How base captures create locations |
+| `base_capture_mode` | progressive, individual | How base captures create locations |
+| `base_captures_per_map` | 1–10 | Milestones per map in progressive mode |
+| `shuffle_deliveries` | on/off | Weapon delivery objectives as locations |
+| `shuffle_briefcases` | on/off | Briefcase pickups as locations |
+| `shuffle_laptops` | on/off | Laptop pickups as locations |
+| `shuffle_radio_calls` | on/off | Randomize radio call access |
+| `rp_shop` | on/off | Enable RP Shop checks |
+| `rp_shop_per_map` | 1–5 | Purchasable checks per map |
+| `rp_shop_cost` | 200–5000 | RP cost per purchase |
 | `trap_chance` | 0–100 | Percentage of filler items that become traps |
 | `death_link` | on/off | Shared deaths across games |
+| `death_link_mode` | kill, random_trap | What happens on received death link |
 | `grenade_shuffle` | none, grouped, individual | Vanilla grenade randomization |
 | `vest_shuffle` | none, grouped, individual | Vest randomization |
 | `costume_shuffle` | none, grouped, individual | Costume randomization |
