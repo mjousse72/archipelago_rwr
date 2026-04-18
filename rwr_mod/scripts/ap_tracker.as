@@ -1,8 +1,4 @@
-// ap_tracker.as — Production Archipelago Tracker for RWR
-//
-// Reads game state from ap_state.xml (written by the Python bridge),
-// applies items in-game, detects location checks, handles traps
-// and death link, and reports back via _log("[AP_...") lines.
+// Archipelago tracker: syncs AP state with the game, detects checks, applies items and traps.
 
 #include "tracker.as"
 #include "helpers.as"
@@ -16,6 +12,15 @@ const int AP_DISCONNECTED = 0;
 const int AP_WAITING      = 1;
 const int AP_RUNNING      = 2;
 const int AP_ERROR        = 3;
+
+// Co-op: per-player tracking data
+class APPlayer {
+	int playerId = -1;
+	int characterId = -1;
+	string name = "";
+	bool alive = false;
+	bool deathLinkKillInProgress = false;
+}
 
 // ============================================================
 class APTracker : Tracker {
@@ -34,6 +39,8 @@ class APTracker : Tracker {
 	protected float m_saveTimer = 30.0;
 	protected float m_disconnectedMsgTimer = 0.0;
 	protected float m_rpDeliveryTimer = 0.0;
+	protected float m_playerScanTimer = 0.0;  // periodic co-op player rescan
+	protected float m_rankSyncTimer = 0.0;    // periodic rank/XP drift correction
 
 	// -- Constants --
 	protected float POLL_INTERVAL = 3.0;
@@ -43,6 +50,8 @@ class APTracker : Tracker {
 	protected float DISCONNECTED_MSG_INTERVAL = 15.0;
 	protected float RP_DELIVERY_INTERVAL = 5.0;
 	protected int   RP_PER_DELIVERY = 100;
+	protected float PLAYER_SCAN_INTERVAL = 2.0;  // safety net for guest joins
+	protected float RANK_SYNC_INTERVAL = 15.0;   // clamp XP back to AP rank threshold
 
 	// -- Bridge state (from ap_state.xml) --
 	protected int m_lastVersion = -1;
@@ -102,11 +111,8 @@ class APTracker : Tracker {
 	protected bool m_radioJammerActive = false;
 	protected float m_radioJammerTimer = 0.0;
 
-	// -- Player state --
-	protected int m_playerCharacterId = -1;
-	protected int m_playerId = -1;
-	protected bool m_playerAlive = false;
-	protected string m_playerName = "";
+	// -- Player state (co-op: track all human players) --
+	protected array<APPlayer> m_players;
 
 	// -- Current map --
 	protected string m_currentMapId = "";
@@ -119,9 +125,6 @@ class APTracker : Tracker {
 
 	// -- RP delivery tracking --
 	protected int m_rpDeliveredLocal = 0;
-
-	// -- Death link anti-loop --
-	protected bool m_deathLinkKillInProgress = false;
 
 	// -- Goal reported --
 	protected bool m_goalReported = false;
@@ -232,13 +235,14 @@ class APTracker : Tracker {
 			}
 		}
 
-		// Detect player if not yet tracked
-		if (m_playerCharacterId < 0) {
-			findLocalPlayer();
+		m_playerScanTimer -= time;
+		if (!hasAnyPlayer() || m_playerScanTimer <= 0.0) {
+			findAllPlayers();
+			m_playerScanTimer = PLAYER_SCAN_INTERVAL;
 		}
 
-		// Send connection message once player is found and game is ready
-		if (!m_connectionMessageSent && m_playerCharacterId >= 0) {
+		// Send connection message once at least one player is found
+		if (!m_connectionMessageSent && hasAnyPlayer()) {
 			m_connectionMessageSent = true;
 			sendChat("Connected to Archipelago as " + m_slotName);
 			_log("[AP] Connection message sent for slot: " + m_slotName);
@@ -247,6 +251,12 @@ class APTracker : Tracker {
 		// XP cooldown timer
 		if (m_xpCooldownTimer > 0.0) {
 			m_xpCooldownTimer -= time;
+		}
+
+		m_rankSyncTimer -= time;
+		if (m_rankSyncTimer <= 0.0) {
+			m_rankSyncTimer = RANK_SYNC_INTERVAL;
+			applyRank();
 		}
 
 		// Poll bridge state
@@ -601,70 +611,101 @@ class APTracker : Tracker {
 	//  ITEM APPLICATION
 	// ============================================================
 
-	// ---- Rank (XP management — xp_reward positive only, with cooldown) ----
+	// ---- Rank / XP ----
+	protected int _effectiveRankLevel() {
+		int rankLevel = m_apRankLevel;
+		if (rankLevel >= int(RANK_XP_THRESHOLDS.size())) {
+			rankLevel = int(RANK_XP_THRESHOLDS.size()) - 1;
+		}
+		return rankLevel;
+	}
+
+	protected void applyRankToPlayer(uint idx) {
+		if (idx >= m_players.size()) return;
+		if (m_apRankLevel < 0) return;
+		if (m_players[idx].characterId < 0) return;
+
+		int rankLevel = _effectiveRankLevel();
+		float targetXp = RANK_XP_THRESHOLDS[rankLevel];
+
+		const XmlElement@ charInfo = getCharacterInfo(m_metagame, m_players[idx].characterId);
+		if (charInfo is null) return;
+		float currentXp = charInfo.getFloatAttribute("xp");
+
+		float delta = targetXp - currentXp;
+		if (delta > 0.005) {
+			string cmd = "<command class='xp_reward' character_id='" +
+				m_players[idx].characterId + "' reward='" + delta + "' />";
+			m_metagame.getComms().send(cmd);
+			_log("[AP] XP for " + m_players[idx].name + ": current=" + currentXp +
+				" target=" + targetXp + " delta=+" + delta + " (rank " + rankLevel + ")");
+		} else if (delta < -0.005) {
+			string cmd = "<command class='xp_reward' character_id='" +
+				m_players[idx].characterId + "' reward='" + delta + "' />";
+			m_metagame.getComms().send(cmd);
+			_log("[AP] XP for " + m_players[idx].name + ": current=" + currentXp +
+				" target=" + targetXp + " delta=" + delta + " (rank " + rankLevel + ", forced down)");
+		}
+	}
+
 	protected void applyRank() {
-		if (m_playerCharacterId < 0) return;
+		if (!hasAnyPlayer()) return;
 		if (m_apRankLevel < 0) return;
 
 		// Cooldown: wait for previous xp_reward to be reflected in getCharacterInfo
 		if (m_xpCooldownTimer > 0.0) return;
 
-		int rankLevel = m_apRankLevel;
-		if (rankLevel >= int(RANK_XP_THRESHOLDS.size())) {
-			rankLevel = int(RANK_XP_THRESHOLDS.size()) - 1;
+		for (uint i = 0; i < m_players.size(); i++) {
+			applyRankToPlayer(i);
 		}
-
-		float targetXp = RANK_XP_THRESHOLDS[rankLevel];
-
-		// Read current XP — MUST succeed, otherwise skip to avoid accumulating XP
-		const XmlElement@ charInfo = getCharacterInfo(m_metagame, m_playerCharacterId);
-		if (charInfo is null) {
-			_log("[AP] applyRank: getCharacterInfo returned null, skipping");
-			return;
-		}
-		float currentXp = charInfo.getFloatAttribute("xp");
-
-		float delta = targetXp - currentXp;
-		// Only send positive — can't reduce XP
-		if (delta > 0.005) {
-			string cmd = "<command class='xp_reward' character_id='" +
-				m_playerCharacterId + "' reward='" + delta + "' />";
-			m_metagame.getComms().send(cmd);
-			_log("[AP] XP: current=" + currentXp + " target=" + targetXp +
-				" sent xp_reward=" + delta + " (rank " + rankLevel + ")");
-			// Wait 5 seconds before next XP operation so the game processes this one
-			m_xpCooldownTimer = 5.0;
-		}
-
-		m_lastAppliedRank = rankLevel;
+		m_xpCooldownTimer = 5.0;
+		m_lastAppliedRank = _effectiveRankLevel();
 	}
 
 	// ---- XP Boost (one-shot per new boost received) ----
+
+	protected void applyXPBoostToPlayer(uint idx) {
+		if (idx >= m_players.size() || m_xpBoost <= 0) return;
+		if (m_players[idx].characterId < 0) return;
+
+		float xpToSend = float(m_xpBoost) * 0.01;
+		string cmd = "<command class='xp_reward' character_id='" +
+			m_players[idx].characterId + "' reward='" + xpToSend + "' />";
+		m_metagame.getComms().send(cmd);
+		_log("[AP] XP boost (total " + m_xpBoost + ") applied to " + m_players[idx].name);
+	}
+
 	protected void applyXPBoost() {
-		if (m_playerCharacterId < 0 || m_xpBoost <= 0) return;
+		if (!hasAnyPlayer() || m_xpBoost <= 0) return;
 		if (m_xpBoost == m_lastAppliedXPBoost) return;
 
 		int boostDelta = m_xpBoost - m_lastAppliedXPBoost;
 		if (boostDelta > 0) {
 			float xpToSend = float(boostDelta) * 0.01;
-			string cmd = "<command class='xp_reward' character_id='" +
-				m_playerCharacterId + "' reward='" + xpToSend + "' />";
-			m_metagame.getComms().send(cmd);
-			_log("[AP] XP boost +" + boostDelta + ", sent xp_reward=" + xpToSend);
+			for (uint i = 0; i < m_players.size(); i++) {
+				if (m_players[i].characterId < 0) continue;
+				string cmd = "<command class='xp_reward' character_id='" +
+					m_players[i].characterId + "' reward='" + xpToSend + "' />";
+				m_metagame.getComms().send(cmd);
+			}
+			_log("[AP] XP boost +" + boostDelta + " sent to " + m_players.size() + " players");
 		}
 		m_lastAppliedXPBoost = m_xpBoost;
 	}
 
 	// ---- Medikit Pack heals ----
 	protected void applyHeals() {
-		if (m_playerCharacterId < 0) return;
+		if (!hasAnyPlayer()) return;
 		while (m_pendingHeals > m_healsDelivered) {
 			m_healsDelivered++;
-			string cmd = "<command class='update_character' character_id='" +
-				m_playerCharacterId + "' health='1.0' />";
-			m_metagame.getComms().send(cmd);
-			sendChat("Medikit Pack: healed!");
-			_log("[AP] Heal #" + m_healsDelivered + " applied");
+			for (uint i = 0; i < m_players.size(); i++) {
+				if (m_players[i].characterId < 0) continue;
+				string cmd = "<command class='update_character' character_id='" +
+					m_players[i].characterId + "' health='1.0' />";
+				m_metagame.getComms().send(cmd);
+			}
+			sendChat("Medikit Pack: all players healed!");
+			_log("[AP] Heal #" + m_healsDelivered + " applied to " + m_players.size() + " players");
 		}
 	}
 
@@ -826,9 +867,9 @@ class APTracker : Tracker {
 		m_metagame.getComms().send(command);
 	}
 
-	// ---- RP delivery (gradual) ----
+	// ---- RP delivery (gradual, to all players) ----
 	protected void updateRPDelivery(float time) {
-		if (m_playerCharacterId < 0) return;
+		if (!hasAnyPlayer()) return;
 		int rpOwed = (m_rpTotal + m_voucherBonusRP) - m_rpDeliveredLocal;
 		if (rpOwed <= 0) return;
 
@@ -839,9 +880,12 @@ class APTracker : Tracker {
 			int toDeliver = rpOwed;
 			if (toDeliver > RP_PER_DELIVERY) toDeliver = RP_PER_DELIVERY;
 
-			string cmd = "<command class='rp_reward' character_id='" +
-				m_playerCharacterId + "' reward='" + toDeliver + "' />";
-			m_metagame.getComms().send(cmd);
+			for (uint i = 0; i < m_players.size(); i++) {
+				if (m_players[i].characterId < 0) continue;
+				string cmd = "<command class='rp_reward' character_id='" +
+					m_players[i].characterId + "' reward='" + toDeliver + "' />";
+				m_metagame.getComms().send(cmd);
+			}
 			m_rpDeliveredLocal += toDeliver;
 		}
 	}
@@ -987,20 +1031,22 @@ class APTracker : Tracker {
 			disableAllCalls();
 		}
 		else if (trapKey == "friendly_fire") {
-			if (m_playerCharacterId >= 0) {
-				if (m_trapSeverity == 0) {
-					// Mild: wound to 50% HP instead of killing
-					sendChat("TRAP: Friendly Fire Incident! You've been wounded.");
+			if (m_trapSeverity == 0) {
+				sendChat("TRAP: Friendly Fire Incident! All players wounded.");
+				for (uint i = 0; i < m_players.size(); i++) {
+					if (m_players[i].characterId < 0) continue;
 					string cmd = "<command class='update_character' character_id='" +
-						m_playerCharacterId + "' health='0.5' />";
+						m_players[i].characterId + "' health='0.5' />";
 					m_metagame.getComms().send(cmd);
-				} else {
-					sendChat("TRAP: Friendly Fire Incident!");
-					killCharacter(m_metagame, m_playerCharacterId);
-					if (m_trapSeverity == 2) {
-						// Harsh: also kill 2 friendlies
-						killNearbyFriendlies(2);
-					}
+				}
+			} else {
+				sendChat("TRAP: Friendly Fire Incident!");
+				for (uint i = 0; i < m_players.size(); i++) {
+					if (m_players[i].characterId < 0) continue;
+					killCharacter(m_metagame, m_players[i].characterId);
+				}
+				if (m_trapSeverity == 2) {
+					killNearbyFriendlies(2);
 				}
 			}
 		}
@@ -1013,21 +1059,18 @@ class APTracker : Tracker {
 	}
 
 	protected void killNearbyFriendlies(int count) {
-		// Kill up to 'count' nearby faction-0 AI soldiers (not the player)
+		// Kill up to 'count' nearby faction-0 AI soldiers (skip all human players)
 		array<const XmlElement@> chars = getCharacters(m_metagame, 0);
 		int killed = 0;
 		for (uint i = 0; i < chars.size() && killed < count; i++) {
-			int charId = chars[i].getIntAttribute("id");
-			// Don't kill the player character
-			if (charId == m_playerCharacterId) continue;
-			// Only kill AI (player_id < 0)
 			int pid = chars[i].getIntAttribute("player_id");
-			if (pid >= 0) continue;
+			if (pid >= 0) continue;  // skip all human players
 
+			int charId = chars[i].getIntAttribute("id");
 			killCharacter(m_metagame, charId);
 			killed++;
 		}
-		_log("[AP] Squad desertion: killed " + killed + " friendly soldiers");
+		_log("[AP] Killed " + killed + " friendly AI soldiers");
 	}
 
 	protected void updateTrapTimers(float time) {
@@ -1046,22 +1089,41 @@ class APTracker : Tracker {
 	// ============================================================
 	protected void handlePlayerDieEvent(const XmlElement@ event) {
 		if (m_state != AP_RUNNING) return;
+		if (event is null) return;
 
-		// Anti-loop: don't report death we caused
-		if (m_deathLinkKillInProgress) {
-			m_deathLinkKillInProgress = false;
+		// Extract player_id from the death event target
+		array<const XmlElement@>@ targets = event.getElementsByTagName("target");
+		if (targets.size() == 0) return;
+		int pid = targets[0].getIntAttribute("player_id");
+
+		int idx = getPlayerIndex(pid);
+		if (idx < 0) return;  // not a tracked player
+
+		m_players[idx].alive = false;
+
+		// Anti-loop: don't report deaths we caused via death link
+		if (m_players[idx].deathLinkKillInProgress) {
+			m_players[idx].deathLinkKillInProgress = false;
 			return;
 		}
 
 		if (m_deathLinkEnabled) {
-			_log("[AP_DEATH] Player died");
+			_log("[AP_DEATH] " + m_players[idx].name + " died");
 		}
-		m_playerAlive = false;
 	}
 
 	protected void processDeathLink() {
 		if (!m_deathLinkPending || !m_deathLinkEnabled) return;
-		if (m_playerCharacterId < 0 || !m_playerAlive) return;
+
+		// Check if any tracked player is alive
+		bool anyAlive = false;
+		for (uint i = 0; i < m_players.size(); i++) {
+			if (m_players[i].alive && m_players[i].characterId >= 0) {
+				anyAlive = true;
+				break;
+			}
+		}
+		if (!anyAlive) return;
 
 		if (m_deathLinkMode == "random_trap") {
 			array<string> trapKeys = {"demotion", "radio_jammer", "friendly_fire"};
@@ -1070,33 +1132,67 @@ class APTracker : Tracker {
 			executeTrap(pick);
 		} else {
 			sendChat("DEATH LINK: Another player has fallen...");
-			m_deathLinkKillInProgress = true;
-			killCharacter(m_metagame, m_playerCharacterId);
+			for (uint i = 0; i < m_players.size(); i++) {
+				if (m_players[i].alive && m_players[i].characterId >= 0) {
+					m_players[i].deathLinkKillInProgress = true;
+					killCharacter(m_metagame, m_players[i].characterId);
+				}
+			}
 		}
 		m_deathLinkPending = false;
 	}
 
 	// ============================================================
-	//  PLAYER TRACKING
+	//  PLAYER TRACKING (co-op: all human players)
 	// ============================================================
 
-	// Query existing players to find the local player (for when
-	// the tracker starts after the player has already spawned).
-	protected void findLocalPlayer() {
+	protected bool isPlayerTracked(int playerId) {
+		for (uint i = 0; i < m_players.size(); i++) {
+			if (m_players[i].playerId == playerId) return true;
+		}
+		return false;
+	}
+
+	protected int getPlayerIndex(int playerId) {
+		for (uint i = 0; i < m_players.size(); i++) {
+			if (m_players[i].playerId == playerId) return int(i);
+		}
+		return -1;
+	}
+
+	protected bool hasAnyPlayer() {
+		return m_players.size() > 0;
+	}
+
+	protected int getAnyCharacterId() {
+		for (uint i = 0; i < m_players.size(); i++) {
+			if (m_players[i].characterId >= 0) return m_players[i].characterId;
+		}
+		return -1;
+	}
+
+	// Scan all connected human players and track them.
+	protected void findAllPlayers() {
 		array<const XmlElement@> players = getPlayers(m_metagame);
 		for (uint i = 0; i < players.size(); i++) {
 			const XmlElement@ p = players[i];
-			// In single-player, there's exactly one player
 			int charId = p.getIntAttribute("character_id");
 			int pid = p.getIntAttribute("player_id");
 			string name = p.getStringAttribute("name");
-			if (charId >= 0) {
-				m_playerCharacterId = charId;
-				m_playerId = pid;
-				m_playerName = name;
-				m_playerAlive = true;
-				_log("[AP] Found existing player: " + name + " char=" + charId);
-				break;
+			if (charId >= 0 && !isPlayerTracked(pid)) {
+				APPlayer pl;
+				pl.playerId = pid;
+				pl.characterId = charId;
+				pl.name = name;
+				pl.alive = true;
+				m_players.insertLast(pl);
+				uint newIdx = m_players.size() - 1;
+				_log("[AP] Tracking player: " + name + " pid=" + pid + " char=" + charId);
+
+				if (m_state == AP_RUNNING) {
+					applyRankToPlayer(newIdx);
+					applyXPBoostToPlayer(newIdx);
+				}
 			}
 		}
 	}
@@ -1110,14 +1206,44 @@ class APTracker : Tracker {
 		int charId = player.getIntAttribute("character_id");
 		int pid = player.getIntAttribute("player_id");
 
-		// In single player, track the first player
-		// In multiplayer, match by username
-		if (m_playerName.length() == 0 || name == m_playerName) {
-			m_playerCharacterId = charId;
-			m_playerId = pid;
-			m_playerName = name;
-			m_playerAlive = true;
-			_log("[AP] Tracking player: " + name + " char=" + charId);
+		int idx = getPlayerIndex(pid);
+		if (idx >= 0) {
+			// Existing player respawned (character_id may change)
+			m_players[idx].characterId = charId;
+			m_players[idx].name = name;
+			m_players[idx].alive = true;
+			_log("[AP] Player respawned: " + name + " char=" + charId);
+		} else {
+			// New player joined
+			APPlayer pl;
+			pl.playerId = pid;
+			pl.characterId = charId;
+			pl.name = name;
+			pl.alive = true;
+			m_players.insertLast(pl);
+			uint newIdx = m_players.size() - 1;
+			_log("[AP] New player joined: " + name + " pid=" + pid + " char=" + charId);
+
+			if (m_state == AP_RUNNING) {
+				applyRankToPlayer(newIdx);
+				applyXPBoostToPlayer(newIdx);
+			}
+		}
+	}
+
+	protected void handlePlayerDisconnectEvent(const XmlElement@ event) {
+		if (event is null) return;
+		const XmlElement@ player = event.getFirstElementByTagName("player");
+		if (player is null) return;
+		int pid = player.getIntAttribute("player_id");
+
+		int idx = getPlayerIndex(pid);
+		if (idx >= 0) {
+			_log("[AP] Player disconnected: " + m_players[idx].name);
+			m_players.removeAt(idx);
+			if (m_players.size() == 0 && m_state == AP_RUNNING) {
+				_log("[AP] No players tracked — waiting for host to respawn.");
+			}
 		}
 	}
 
@@ -1128,6 +1254,8 @@ class APTracker : Tracker {
 		if (event is null) return;
 		string message = event.getStringAttribute("message");
 		if (!startsWith(message, "/")) return;
+
+		int senderPid = event.getIntAttribute("player_id");
 
 		if (checkCommand(message, "apstatus")) {
 			cmdStatus();
@@ -1140,9 +1268,9 @@ class APTracker : Tracker {
 		} else if (checkCommand(message, "aphelp")) {
 			cmdHelp();
 		} else if (checkCommand(message, "apbuy")) {
-			cmdBuy();
+			cmdBuy(senderPid);
 		} else if (checkCommand(message, "apshop")) {
-			cmdShop();
+			cmdShop(senderPid);
 		} else if (checkCommand(message, "goto")) {
 			cmdGoto(message);
 		}
@@ -1272,7 +1400,7 @@ class APTracker : Tracker {
 		sendChat("Map: " + mapName + " - " + sent + " checks sent");
 	}
 
-	protected void cmdBuy() {
+	protected void cmdBuy(int senderPid) {
 		if (m_state != AP_RUNNING) {
 			sendChat("Not connected to AP.");
 			return;
@@ -1300,12 +1428,15 @@ class APTracker : Tracker {
 			return;
 		}
 
-		// Read player RP
-		if (m_playerCharacterId < 0) {
+		// Find the sender's character
+		int idx = getPlayerIndex(senderPid);
+		if (idx < 0 || m_players[idx].characterId < 0) {
 			sendChat("Player not found.");
 			return;
 		}
-		const XmlElement@ charInfo = getCharacterInfo(m_metagame, m_playerCharacterId);
+		int charId = m_players[idx].characterId;
+
+		const XmlElement@ charInfo = getCharacterInfo(m_metagame, charId);
 		if (charInfo is null) {
 			sendChat("Cannot read player info.");
 			return;
@@ -1317,25 +1448,25 @@ class APTracker : Tracker {
 			return;
 		}
 
-		// Deduct RP
+		// Deduct RP from the player who typed the command
 		string cmd = "<command class='rp_reward' character_id='" +
-			m_playerCharacterId + "' reward='" + (-m_rpShopCost) + "' />";
+			charId + "' reward='" + (-m_rpShopCost) + "' />";
 		m_metagame.getComms().send(cmd);
 
-		// Increment and report check
+		// Increment and report check (shared limit)
 		purchased++;
 		m_rpShopPurchased.set(mapName, purchased);
 		string locName = "RP Shop " + purchased + " (" + mapName + ")";
 		reportCheck(locName);
 
 		int remaining = m_rpShopPerMap - purchased;
-		sendChat("Purchased! " + remaining + " remaining on " + mapName + ".");
+		sendChat(m_players[idx].name + " purchased! " + remaining + " remaining on " + mapName + ".");
 
 		// Save immediately
 		saveModState();
 	}
 
-	protected void cmdShop() {
+	protected void cmdShop(int senderPid) {
 		if (m_state != AP_RUNNING) {
 			sendChat("Not connected to AP.");
 			return;
@@ -1358,10 +1489,11 @@ class APTracker : Tracker {
 		}
 		int remaining = m_rpShopPerMap - purchased;
 
-		// Read player RP
+		// Read RP of the player who typed the command
 		string rpStr = "?";
-		if (m_playerCharacterId >= 0) {
-			const XmlElement@ charInfo = getCharacterInfo(m_metagame, m_playerCharacterId);
+		int idx = getPlayerIndex(senderPid);
+		if (idx >= 0 && m_players[idx].characterId >= 0) {
+			const XmlElement@ charInfo = getCharacterInfo(m_metagame, m_players[idx].characterId);
 			if (charInfo !is null) {
 				rpStr = "" + charInfo.getIntAttribute("rp");
 			}

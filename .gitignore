@@ -31,8 +31,6 @@ ap_checks.json
 *.log
 
 # Internal docs (not for public release)
-docs/research/
-docs/architecture.md
-docs/manual_tests.md
+docs/
 TODO.md
 .claude/

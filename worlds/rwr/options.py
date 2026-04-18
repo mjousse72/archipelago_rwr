@@ -255,7 +255,7 @@ class RPShopCost(Range):
     display_name = "RP Shop Cost"
     range_start = 200
     range_end = 5000
-    default = 1000
+    default = 500
 
 
 class DeathLink(Toggle):

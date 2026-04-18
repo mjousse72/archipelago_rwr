@@ -46,6 +46,29 @@ Generate a template from the Archipelago launcher, edit the options, and submit 
 2. Connect to the server: `/connect host:port`
 3. Launch RWR with the Archipelago mod selected.
 
+## Co-op Play
+
+Two players can share a single Archipelago slot using RWR's native co-op. One plays as host, the other joins their server.
+
+**Setup:**
+
+1. Both players install the RWR Archipelago mod (same version) into `media/packages/`.
+2. The **host** follows the normal setup: generates the seed, connects the AP client, launches RWR with the mod.
+3. The **guest** joins the host's server:
+   - **LAN**: Multiplayer → LAN Browser → pick the host's server.
+   - **Internet**: Multiplayer → by IP (host must port-forward UDP `4001–4002`), or accept a Steam Friends invite.
+
+**Shared state:**
+- Checks made by either player count toward the shared slot.
+- Items (rank, weapons, radio calls, equipment) apply to both players.
+- Death Link affects both players.
+
+**Notes:**
+- Only the host runs the Python AP client — the guest just plays.
+- When the guest joins mid-campaign, their character is forced to the current AP rank (up or down) and receives the current XP boost total.
+- If the host disconnects, the RWR server ends (RWR does not support host migration). Relaunch to resume.
+- Chat commands (`/apstatus`, `/apitems`, `/goto`, …) work for both players.
+
 ## Build from source
 
 ```bash
