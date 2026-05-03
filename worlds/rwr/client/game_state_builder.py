@@ -175,8 +175,12 @@ def build_game_state(
     costume_name_to_file: dict[str, str] = slot_data.get("vanilla_costume_name_to_file", {})
 
     # --- Initialize maps (all locked except starting map) ---
+    # starting_map option: 0=Moorland Trenches, 1=Keepsake Bay, 2=Old Fort Creek.
+    starting_map_option = slot_data.get("starting_map", 1)
+    starting_map_id = {0: "map1", 1: "map2", 2: "map3"}.get(starting_map_option, "map2")
+    state.starting_map_id = starting_map_id
     for map_name, map_id in map_internal_ids.items():
-        state.unlocked_maps[map_id] = (map_id == "map2")  # Keepsake Bay always unlocked
+        state.unlocked_maps[map_id] = (map_id == starting_map_id)
 
     # --- Initialize weapon tracking ---
     if weapon_shuffle == 1:  # categories

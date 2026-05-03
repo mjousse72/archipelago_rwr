@@ -585,13 +585,13 @@ def _count_post_weapon_items(world: RWRWorld) -> int:
 
 def create_all_items(world: RWRWorld) -> None:
     """Create all items and add them to the multiworld pool."""
-    from .locations import STARTING_MAP
+    from .locations import get_starting_map_name
 
     total_locations = len(world.multiworld.get_unfilled_locations(world.player))
     itempool: list[RWRItem] = []
 
     # --- Map keys (always) ---
-    starting_key = f"{STARTING_MAP} Key"
+    starting_key = f"{get_starting_map_name(world.options)} Key"
     for name in MAP_KEYS:
         if name == starting_key:
             continue

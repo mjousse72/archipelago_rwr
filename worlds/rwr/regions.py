@@ -4,21 +4,24 @@ from typing import TYPE_CHECKING
 
 from BaseClasses import Region
 
-from .locations import ALL_MAP_NAMES, FINAL_MISSIONS, MAP_NAMES, create_locations_for_region
+from .locations import (
+    ALL_MAP_NAMES,
+    FINAL_MISSIONS,
+    MAP_NAMES,
+    create_locations_for_region,
+    get_starting_map_name,
+)
 
 if TYPE_CHECKING:
     from . import RWRWorld
 
 
 # Campaign map network extracted from vanilla stage_configurator_campaign.as.
-# The campaign is a non-linear network with hub-and-spoke topology.
-# Keepsake Bay (map2) is the starting map. Final missions are accessible
-# from all regular maps (gated by keys in AP).
+# The campaign is a non-linear network with hub-and-spoke topology. Final
+# missions are accessible from all regular maps (gated by keys in AP). The
+# Menu -> starting map edge is added dynamically in create_regions().
 
 MAP_CONNECTIONS: list[tuple[str, str]] = [
-    # Starting map: Menu -> Keepsake Bay
-    ("Menu", "Keepsake Bay"),
-
     # Moorland Trenches connections
     ("Moorland Trenches", "Old Fort Creek"),
     ("Moorland Trenches", "Rattlesnake Crescent"),
@@ -77,7 +80,9 @@ MAP_CONNECTIONS.append(("Final Mission II", "Final Mission I"))
 
 def create_regions(world: RWRWorld) -> None:
     """Create all regions, connect them, and populate with locations."""
-    region_names: set[str] = {"Menu"}
+    starting_map = get_starting_map_name(world.options)
+
+    region_names: set[str] = {"Menu", starting_map}
     for src, dst in MAP_CONNECTIONS:
         region_names.add(src)
         region_names.add(dst)
@@ -96,6 +101,12 @@ def create_regions(world: RWRWorld) -> None:
         regions.append(region)
     world.multiworld.regions += regions
 
+    # Connect Menu to the chosen starting map (always reachable, no key required)
+    world.get_region("Menu").connect(
+        world.get_region(starting_map),
+        f"Menu -> {starting_map}",
+    )
+
     # Connect regions — deduplicate since many pairs appear in both directions
     created_entrances: set[str] = set()
     for src_name, dst_name in MAP_CONNECTIONS:
@@ -111,9 +122,9 @@ def create_regions(world: RWRWorld) -> None:
 
     # Connect Delivery region to starting map (deliveries can happen on any map)
     if has_deliveries:
-        world.get_region("Keepsake Bay").connect(
+        world.get_region(starting_map).connect(
             world.get_region("Delivery"),
-            "Keepsake Bay -> Delivery",
+            f"{starting_map} -> Delivery",
         )
 
     # Create locations within each region

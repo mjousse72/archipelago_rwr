@@ -42,6 +42,18 @@ class StartingRank(Range):
     default = 0
 
 
+class StartingMap(Choice):
+    """
+    Which campaign map the player starts on. The matching map key is precollected.
+    Choices are limited to the first three campaign maps.
+    """
+    display_name = "Starting Map"
+    option_moorland_trenches = 0
+    option_keepsake_bay = 1
+    option_old_fort_creek = 2
+    default = option_keepsake_bay
+
+
 class TrapChance(Range):
     """
     Percentage chance that a filler item is replaced by a trap.
@@ -283,6 +295,7 @@ class RWROptions(PerGameCommonOptions):
     goal: Goal
     maps_to_win: MapsToWin
     starting_rank: StartingRank
+    starting_map: StartingMap
     trap_chance: TrapChance
     trap_severity: TrapSeverity
     weapon_shuffle: WeaponShuffle
@@ -310,7 +323,7 @@ class RWROptions(PerGameCommonOptions):
 option_groups = [
     OptionGroup("Goal Options", [Goal, MapsToWin]),
     OptionGroup("Gameplay Options", [
-        StartingRank, TrapChance, TrapSeverity, WeaponShuffle,
+        StartingRank, StartingMap, TrapChance, TrapSeverity, WeaponShuffle,
         BaseCaptureMode, BaseCapturesPerMap,
         IncludeSideMissions, ShuffleRadioCalls,
         GrenadeShuffle, VestShuffle, CostumeShuffle,

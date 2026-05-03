@@ -89,6 +89,7 @@ class RWRWorld(World):
             "goal",
             "maps_to_win",
             "starting_rank",
+            "starting_map",
             "trap_severity",
             "weapon_shuffle",
             "base_capture_mode",

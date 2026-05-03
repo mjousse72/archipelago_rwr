@@ -18,7 +18,6 @@ BASE_ID = 9_340_000
 
 # --- Campaign maps ---
 # Real names from vanilla campaign (stage_configurator_campaign.as).
-# map2 = Keepsake Bay is the starting map.
 
 MAP_NAMES: list[str] = [
     "Moorland Trenches",
@@ -59,8 +58,19 @@ MAP_INTERNAL_IDS: dict[str, str] = {
 # Reverse mapping
 MAP_ID_TO_NAME: dict[str, str] = {v: k for k, v in MAP_INTERNAL_IDS.items()}
 
-# Starting map (always unlocked, no key required)
+# Default starting map (when options aren't available, e.g. tests). The actual
+# starting map is selected by the StartingMap option — see get_starting_map_name().
 STARTING_MAP = "Keepsake Bay"
+
+_STARTING_MAP_BY_OPTION: dict[int, str] = {
+    0: "Moorland Trenches",
+    1: "Keepsake Bay",
+    2: "Old Fort Creek",
+}
+
+
+def get_starting_map_name(options) -> str:
+    return _STARTING_MAP_BY_OPTION.get(options.starting_map.value, STARTING_MAP)
 
 # --- Named bases per map ---
 # Extracted from objects.svg files. Each base = potential individual location.

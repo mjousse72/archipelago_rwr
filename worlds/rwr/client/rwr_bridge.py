@@ -24,6 +24,9 @@ class GameState:
     # Rank
     rank_level: int = 0
 
+    # Starting map ID (e.g. "map1", "map2", "map3")
+    starting_map_id: str = "map2"
+
     # Maps: map_id -> unlocked
     unlocked_maps: dict[str, bool] = field(default_factory=dict)
 
@@ -207,8 +210,8 @@ class RWRBridge:
         # <rank level="3" />
         lines.append(f'  <rank level="{state.rank_level}" />')
 
-        # <maps>
-        lines.append("  <maps>")
+        # <maps starting="map2">
+        lines.append(f'  <maps starting="{_esc(state.starting_map_id)}">')
         for map_id, unlocked in sorted(state.unlocked_maps.items()):
             lines.append(f'    <map key="{_esc(map_id)}" unlocked="{_b(unlocked)}" />')
         lines.append("  </maps>")

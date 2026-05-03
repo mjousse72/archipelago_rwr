@@ -1,0 +1,47 @@
+name: Player1
+description: Running with Rifles - classic Archipelago run (basic options)
+game: Running with Rifles
+
+Running with Rifles:
+  # Goal: complete both Final Missions
+  goal: campaign_complete
+
+  # Start as Private on Keepsake Bay (vanilla campaign start)
+  starting_rank: 0
+  starting_map: keepsake_bay
+
+  # Weapons shuffled by category (Assault Rifles, Machineguns, etc.) — simpler
+  # than the individual mode which scatters every weapon as its own item.
+  weapon_shuffle: categories
+  start_with_basic_weapons: true
+
+  # Radio calls and equipment locked behind items
+  shuffle_radio_calls: true
+  start_with_radio: false
+
+  # Vanilla grenades and vests are unlocked via single grouped items
+  grenade_shuffle: grouped
+  vest_shuffle: grouped
+  costume_shuffle: none
+  start_with_grenades: false
+  start_with_vests: false
+  start_with_costumes: false
+
+  # Base captures use progressive milestones (e.g. "Captured 3 bases on X")
+  base_capture_mode: progressive
+  base_captures_per_map: 3
+
+  # Side missions count as locations (objects, prisoners, cargo, etc.)
+  include_side_missions: true
+
+  # Optional location packs — off for a focused, classic experience
+  shuffle_deliveries: false
+  shuffle_briefcases: false
+  rp_shop: false
+
+  # Traps: low chance, default severity
+  trap_chance: 15
+  trap_severity: medium
+
+  # Death Link off
+  death_link: false

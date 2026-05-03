@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from worlds.generic.Rules import set_rule
 
-from .locations import FINAL_MISSIONS, MAP_NAMES, STARTING_MAP
+from .locations import FINAL_MISSIONS, MAP_NAMES, get_starting_map_name
 from .options import Goal, WeaponShuffle
 from .regions import MAP_CONNECTIONS
 
@@ -25,14 +25,15 @@ def _rank_level(state: CollectionState, player: int) -> int:
 def set_rules(world: RWRWorld) -> None:
     """Set all access rules and the completion condition."""
     player = world.player
+    starting_map = get_starting_map_name(world.options)
 
-    _set_entrance_rules(world, player)
-    _set_conquest_rules(world, player)
-    _set_victory_event_rules(world, player)
+    _set_entrance_rules(world, player, starting_map)
+    _set_conquest_rules(world, player, starting_map)
+    _set_victory_event_rules(world, player, starting_map)
     _set_completion_condition(world, player)
 
 
-def _set_entrance_rules(world: RWRWorld, player: int) -> None:
+def _set_entrance_rules(world: RWRWorld, player: int, starting_map: str) -> None:
     """Set map key requirements on all entrances."""
     entrances_by_dest: dict[str, list[str]] = {}
     for src, dst in MAP_CONNECTIONS:
@@ -40,7 +41,7 @@ def _set_entrance_rules(world: RWRWorld, player: int) -> None:
         entrances_by_dest.setdefault(dst, []).append(entrance_name)
 
     for dest_map, entrance_names in entrances_by_dest.items():
-        if dest_map == STARTING_MAP:
+        if dest_map == starting_map:
             continue
 
         for ename in entrance_names:
@@ -54,7 +55,7 @@ def _set_entrance_rules(world: RWRWorld, player: int) -> None:
             )
 
 
-def _set_conquest_rules(world: RWRWorld, player: int) -> None:
+def _set_conquest_rules(world: RWRWorld, player: int, starting_map: str) -> None:
     """Set rules for map conquest locations (need minimum rank to conquer)."""
     for map_name in MAP_NAMES:
         loc_name = f"Conquered {map_name}"
@@ -62,7 +63,7 @@ def _set_conquest_rules(world: RWRWorld, player: int) -> None:
             loc = world.get_location(loc_name)
         except KeyError:
             continue
-        if map_name == STARTING_MAP:
+        if map_name == starting_map:
             continue  # starting map is always reachable
         set_rule(loc, lambda state: _rank_level(state, player) >= 1)
 
@@ -76,7 +77,7 @@ def _set_conquest_rules(world: RWRWorld, player: int) -> None:
         set_rule(loc, lambda state: _rank_level(state, player) >= 5)
 
 
-def _set_victory_event_rules(world: RWRWorld, player: int) -> None:
+def _set_victory_event_rules(world: RWRWorld, player: int, starting_map: str) -> None:
     """Set rules on victory events (used for completion conditions)."""
     for map_name in MAP_NAMES:
         event_name = f"Victory: {map_name}"
@@ -84,7 +85,7 @@ def _set_victory_event_rules(world: RWRWorld, player: int) -> None:
             loc = world.get_location(event_name)
         except KeyError:
             continue
-        if map_name == STARTING_MAP:
+        if map_name == starting_map:
             continue  # starting map is always reachable
         set_rule(loc, lambda state: _rank_level(state, player) >= 1)
 

@@ -368,9 +368,13 @@ class APTracker : Tracker {
 			m_apRankLevel = rankElem.getIntAttribute("level");
 		}
 
-		// <maps>
+		// <maps starting="map2">
 		const XmlElement@ mapsElem = root.getFirstElementByTagName("maps");
 		if (mapsElem !is null) {
+			string startingMap = mapsElem.getStringAttribute("starting");
+			if (startingMap.length() > 0) {
+				STARTING_MAP_ID = startingMap;
+			}
 			m_unlockedMaps = dictionary();
 			array<const XmlElement@>@ mapList = mapsElem.getElementsByTagName("map");
 			for (uint i = 0; i < mapList.size(); i++) {
