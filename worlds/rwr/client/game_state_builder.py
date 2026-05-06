@@ -123,6 +123,20 @@ def build_location_table(slot_data: dict[str, Any]) -> dict[str, int]:
                 name_to_id[f"RP Shop {i} ({map_name})"] = LOC_BASE_ID + idx
             idx += 1
 
+    # 9) Combat milestone locations (filtered by combat_milestones)
+    combat_milestones = bool(slot_data.get("combat_milestones", 1))
+    kill_milestones = [1, 10, 25, 50, 100, 200, 500, 1000]
+    for n in kill_milestones:
+        if combat_milestones:
+            label = f"Killed {n} enemy" if n == 1 else f"Killed {n} enemies"
+            name_to_id[label] = LOC_BASE_ID + idx
+        idx += 1
+    for prefix in ("Blast kill on ", "Stab kill on ", "Roadkill on "):
+        for map_name in ALL_MAPS:
+            if combat_milestones:
+                name_to_id[f"{prefix}{map_name}"] = LOC_BASE_ID + idx
+            idx += 1
+
     return name_to_id
 
 
@@ -348,5 +362,9 @@ def build_game_state(
 
     # Goal
     state.goal_complete = finished_game
+
+    # Enabled location names (for the overlay's "checks remaining" view).
+    # Reuse build_location_table so the option-filtering logic stays single-sourced.
+    state.enabled_location_names = list(build_location_table(slot_data).keys())
 
     return state, trap_counter

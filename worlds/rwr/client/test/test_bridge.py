@@ -791,6 +791,7 @@ class TestLocationTableConsistency(unittest.TestCase):
             "include_side_missions": 1,
             "shuffle_deliveries": 0,
             "shuffle_briefcases": 0,
+            "combat_milestones": 0,
         }
         data.update(overrides)
         return data
@@ -851,9 +852,11 @@ class TestLocationTableConsistency(unittest.TestCase):
             base_capture_mode=2,
             shuffle_deliveries=1,
             shuffle_briefcases=1,
+            combat_milestones=1,
         ))
         total_bases = sum(len(b) for b in self.BASES_BY_MAP.values())
-        expected = 12 + 10 + total_bases + 15 + 8 + 6  # conquest+side+indiv+delivery+brief+laptop
+        # conquest+side+indiv+delivery+brief+laptop+combat (8 milestones + 12*3 per-map)
+        expected = 12 + 10 + total_bases + 15 + 8 + 6 + 8 + 12 * 3
         self.assertEqual(len(table), expected)
 
 

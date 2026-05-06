@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -35,6 +37,25 @@ POLL_INTERVAL = 1.0
 def _safe_filename(name: str) -> str:
     """Sanitize a string into a safe filename component."""
     return "".join(c if c.isalnum() or c in "_-" else "_" for c in name)
+
+
+def _launch_overlay(state_dir: Path) -> subprocess.Popen | None:
+    """Launch the Tk overlay window in a separate Python process."""
+    overlay_module = Path(__file__).with_name("overlay.py")
+    if not overlay_module.exists():
+        logger.warning("Overlay module not found at %s", overlay_module)
+        return None
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, str(overlay_module), "--state-dir", str(state_dir)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        logger.info("Launched overlay (pid=%d)", proc.pid)
+        return proc
+    except OSError as e:
+        logger.warning("Failed to launch overlay: %s", e)
+        return None
 
 
 # --- Command processor ---
@@ -302,6 +323,8 @@ def main(*args: str) -> None:
     async def _run() -> None:
         parser = get_base_parser()
         parser.add_argument("--name", default=None, help="Slot name for authentication")
+        parser.add_argument("--no-overlay", action="store_true",
+                            help="Disable the Tk action overlay window")
         parsed = parser.parse_args(args if args else None)
 
         ctx = RWRContext(parsed.connect, parsed.password)
@@ -313,6 +336,11 @@ def main(*args: str) -> None:
 
         # Write disconnected state initially
         ctx.bridge.write_disconnected()
+
+        # Launch overlay window unless disabled
+        overlay_proc: subprocess.Popen | None = None
+        if not parsed.no_overlay:
+            overlay_proc = _launch_overlay(RWR_APP_DATA)
 
         # Start server connection task
         asyncio.create_task(server_loop(ctx))
@@ -327,8 +355,10 @@ def main(*args: str) -> None:
         await ctx.exit_event.wait()
         watcher_task.cancel()
 
-        # Clean up: write disconnected
+        # Clean up: write disconnected and stop overlay
         ctx.bridge.write_disconnected()
+        if overlay_proc is not None and overlay_proc.poll() is None:
+            overlay_proc.terminate()
 
     import colorama
     colorama.init()

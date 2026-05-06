@@ -41,6 +41,7 @@ class APTracker : Tracker {
 	protected float m_rpDeliveryTimer = 0.0;
 	protected float m_playerScanTimer = 0.0;  // periodic co-op player rescan
 	protected float m_rankSyncTimer = 0.0;    // periodic rank/XP drift correction
+	protected float m_userCmdTimer = 0.0;     // overlay command poll (fast)
 
 	// -- Constants --
 	protected float POLL_INTERVAL = 3.0;
@@ -52,6 +53,7 @@ class APTracker : Tracker {
 	protected int   RP_PER_DELIVERY = 100;
 	protected float PLAYER_SCAN_INTERVAL = 2.0;  // safety net for guest joins
 	protected float RANK_SYNC_INTERVAL = 15.0;   // clamp XP back to AP rank threshold
+	protected float USER_CMD_INTERVAL = 0.5;     // overlay button → action latency budget
 
 	// -- Bridge state (from ap_state.xml) --
 	protected int m_lastVersion = -1;
@@ -74,6 +76,7 @@ class APTracker : Tracker {
 	protected array<string> m_notifications;
 	protected bool m_deathLinkEnabled = false;
 	protected bool m_deathLinkPending = false;
+	protected bool m_deathLinkAcked = false;  // latch: stay true until bridge clears pending
 	protected string m_deathLinkMode = "kill";  // "kill" or "random_trap"
 	protected bool m_goalComplete = false;
 
@@ -120,6 +123,9 @@ class APTracker : Tracker {
 	// -- Sent checks (deduplication) --
 	protected dictionary m_sentChecks;
 
+	// -- User command (overlay) dedup --
+	protected int m_lastUserCmdSeq = -1;
+
 	// -- Processed traps (deduplication) --
 	protected dictionary m_processedTraps;
 
@@ -141,12 +147,21 @@ class APTracker : Tracker {
 	protected int m_lastAppliedXPBoost = 0;
 	protected float m_xpCooldownTimer = 0.0;  // wait after sending xp_reward
 
+	// -- Combat milestones (kill counters + per-map first-of-kind sets) --
+	protected int m_killCount = 0;
+	protected dictionary m_blastKilledMaps;
+	protected dictionary m_stabKilledMaps;
+	protected dictionary m_roadkilledMaps;
+
 	// ============================================================
 	//  CONSTRUCTOR
 	// ============================================================
 	APTracker(Metagame@ metagame) {
 		@m_metagame = @metagame;
 		initAPData();
+		// Opt-in to character_kill events (vanilla pattern: heal_on_kill.as, kill_commander.as)
+		m_metagame.getComms().send(
+			"<command class='set_metagame_event' name='character_kill' enabled='1' />");
 		// loadModState() deferred until campaign_id is known from ap_state.xml
 		_log("[AP] APTracker created");
 	}
@@ -269,6 +284,13 @@ class APTracker : Tracker {
 				m_errorRetryCount = 0;
 				m_errorRetryTimer = ERROR_RETRY_INTERVAL;
 			}
+		}
+
+		// Poll overlay user commands (fast cadence, decoupled from AP state)
+		m_userCmdTimer -= time;
+		if (m_userCmdTimer <= 0.0) {
+			m_userCmdTimer = USER_CMD_INTERVAL;
+			processUserCommand();
 		}
 
 		// Trap timers
@@ -544,7 +566,9 @@ class APTracker : Tracker {
 		const XmlElement@ dlElem = root.getFirstElementByTagName("death_link");
 		if (dlElem !is null) {
 			m_deathLinkEnabled = (dlElem.getIntAttribute("enabled") == 1);
-			m_deathLinkPending = (dlElem.getIntAttribute("pending") == 1);
+			bool xmlPending = (dlElem.getIntAttribute("pending") == 1);
+			if (!xmlPending) m_deathLinkAcked = false;  // bridge cleared → ready for next
+			m_deathLinkPending = (xmlPending && !m_deathLinkAcked);
 			m_deathLinkMode = dlElem.getStringAttribute("mode");
 			if (m_deathLinkMode == "") m_deathLinkMode = "kill";
 		}
@@ -602,6 +626,47 @@ class APTracker : Tracker {
 		processTraps();
 		processDeathLink();
 		return true;
+	}
+
+	// Read ap_user_command.xml written by the Tk overlay and dispatch
+	// to the existing cmd*() methods. Dedup via the seq counter so we
+	// don't replay the same command across multiple polls.
+	protected void processUserCommand() {
+		XmlElement@ query = XmlElement(
+			makeQuery(m_metagame, array<dictionary> = {
+				dictionary = {
+					{"TagName", "data"},
+					{"class", "saved_data"},
+					{"filename", "ap_user_command.xml"},
+					{"location", "app_data"}
+				}
+			})
+		);
+		const XmlElement@ doc = m_metagame.getComms().query(query);
+		if (doc is null) return;
+
+		const XmlElement@ root = doc.getFirstChild();
+		if (root is null) return;
+		const XmlElement@ cmd = root.getFirstElementByTagName("user_command");
+		if (cmd is null) return;
+
+		int seq = cmd.getIntAttribute("seq");
+		if (seq == m_lastUserCmdSeq) return;  // already processed
+		m_lastUserCmdSeq = seq;
+
+		string cmdType = cmd.getStringAttribute("type");
+		int senderPid = m_players.size() > 0 ? m_players[0].playerId : -1;
+
+		if (cmdType == "buy") {
+			cmdBuy(senderPid);
+		} else if (cmdType == "goto") {
+			string mapId = cmd.getStringAttribute("map");
+			if (mapId.length() > 0) {
+				cmdGotoMapId(mapId);
+			}
+		} else {
+			_log("[AP] processUserCommand: unknown type '" + cmdType + "'");
+		}
 	}
 
 	// Push current map unlock state to the map rotator.
@@ -944,6 +1009,49 @@ class APTracker : Tracker {
 		checkBaseCaptures(mapName);
 	}
 
+	// ---- Combat milestones (kills) ----
+	protected void handleCharacterKillEvent(const XmlElement@ event) {
+		if (m_state != AP_RUNNING || event is null) return;
+
+		const XmlElement@ killer = event.getFirstElementByTagName("killer");
+		const XmlElement@ target = event.getFirstElementByTagName("target");
+		if (killer is null || target is null) return;
+
+		int killerPid = killer.getIntAttribute("player_id");
+		int targetFaction = target.getIntAttribute("faction_id");
+
+		// Only count: a tracked human killed an enemy (skip AI vs AI, skip friendly fire)
+		if (killerPid < 0 || !isPlayerTracked(killerPid)) return;
+		if (targetFaction == 0) return;
+
+		// Cumulative kill milestones (shared across all tracked players)
+		m_killCount++;
+		array<int> milestones = {1, 10, 25, 50, 100, 200, 500, 1000};
+		for (uint i = 0; i < milestones.size(); i++) {
+			if (m_killCount == milestones[i]) {
+				string suffix = (milestones[i] == 1) ? " enemy" : " enemies";
+				reportCheck("Killed " + milestones[i] + suffix);
+			}
+		}
+
+		// Per-map first-of-kind checks
+		if (m_currentMapId.length() == 0) return;
+		string method = event.getStringAttribute("method_hint");
+		string mapName = getMapNameFromId(m_currentMapId);
+		if (mapName.length() == 0) return;
+
+		if (method == "blast" && !m_blastKilledMaps.exists(m_currentMapId)) {
+			m_blastKilledMaps.set(m_currentMapId, true);
+			reportCheck("Blast kill on " + mapName);
+		} else if (method == "stab" && !m_stabKilledMaps.exists(m_currentMapId)) {
+			m_stabKilledMaps.set(m_currentMapId, true);
+			reportCheck("Stab kill on " + mapName);
+		} else if (method == "drive_over" && !m_roadkilledMaps.exists(m_currentMapId)) {
+			m_roadkilledMaps.set(m_currentMapId, true);
+			reportCheck("Roadkill on " + mapName);
+		}
+	}
+
 	protected void checkBaseCaptures(string mapName) {
 		array<const XmlElement@> bases = getBases(m_metagame);
 		int ownedCount = 0;
@@ -1144,6 +1252,8 @@ class APTracker : Tracker {
 			}
 		}
 		m_deathLinkPending = false;
+		m_deathLinkAcked = true;  // don't re-fire while bridge still has pending=1
+		_log("[AP_DEATHLINK_ACK]");
 	}
 
 	// ============================================================
@@ -1267,7 +1377,7 @@ class APTracker : Tracker {
 			cmdItems();
 		} else if (checkCommand(message, "apmaps")) {
 			cmdMaps();
-		} else if (checkCommand(message, "apchecks")) {
+		} else if (checkCommand(message, "aplocs")) {
 			cmdChecks();
 		} else if (checkCommand(message, "aphelp")) {
 			cmdHelp();
@@ -1333,7 +1443,6 @@ class APTracker : Tracker {
 
 	protected void cmdGoto(string message) {
 		// Parse "/goto Map Name Here" — skip command prefix
-		// Find first space after /goto
 		int spacePos = message.findFirst(" ");
 		if (spacePos < 0) {
 			sendChat("Usage: /goto <map name>");
@@ -1341,7 +1450,6 @@ class APTracker : Tracker {
 		}
 		string mapName = message.substr(spacePos + 1);
 
-		// Trim leading spaces
 		while (mapName.length() > 0 && mapName.substr(0, 1) == " ") {
 			mapName = mapName.substr(1);
 		}
@@ -1351,15 +1459,21 @@ class APTracker : Tracker {
 			return;
 		}
 
-		// Case-insensitive map name lookup
 		string mapId = getMapIdFromName(mapName);
 		if (mapId.length() == 0) {
 			sendChat("Unknown map: " + mapName);
 			sendChat("Use real names like: Moorland Trenches, Keepsake Bay, ...");
 			return;
 		}
+		cmdGotoMapId(mapId);
+	}
 
+	protected void cmdGotoMapId(string mapId) {
 		string resolvedName = getMapNameFromId(mapId);
+		if (resolvedName.length() == 0) {
+			sendChat("Unknown map id: " + mapId);
+			return;
+		}
 
 		if (!isMapUnlocked(mapId)) {
 			sendChat("Map '" + resolvedName + "' is locked. You need the key!");
@@ -1368,12 +1482,12 @@ class APTracker : Tracker {
 
 		if (m_mapRotator is null) {
 			sendChat("Map travel not available (no map rotator).");
-			_log("[AP] /goto failed: m_mapRotator is null");
+			_log("[AP] goto failed: m_mapRotator is null");
 			return;
 		}
 
 		sendChat("Traveling to " + resolvedName + "... Stand by for extraction.");
-		_log("[AP] /goto: requesting change to " + mapId + " (" + resolvedName + ")");
+		_log("[AP] goto: requesting change to " + mapId + " (" + resolvedName + ")");
 		m_mapRotator.requestMapChange(mapId);
 	}
 
@@ -1512,7 +1626,7 @@ class APTracker : Tracker {
 		sendChat("  /apstatus  - Connection status & progress");
 		sendChat("  /apitems   - Unlocked items summary");
 		sendChat("  /apmaps    - Show map unlock status");
-		sendChat("  /apchecks  - Checks on current map");
+		sendChat("  /aplocs    - Checks on current map");
 		sendChat("  /apbuy     - Buy an RP Shop check");
 		sendChat("  /apshop    - Show RP Shop status");
 		sendChat("  /goto <map> - Fast travel to unlocked map");
@@ -1575,6 +1689,28 @@ class APTracker : Tracker {
 
 		// XP tracking (to avoid re-sending xp_reward on reconnect)
 		cmd += "<xp_tracking last_rank='" + m_lastAppliedRank + "' last_xp_boost='" + m_lastAppliedXPBoost + "' />";
+
+		// Combat milestones
+		cmd += "<combat kill_count='" + m_killCount + "'>";
+		cmd += "<blast>";
+		array<string> bKeys = m_blastKilledMaps.getKeys();
+		for (uint i = 0; i < bKeys.size(); i++) {
+			cmd += "<map id='" + escapeXml(bKeys[i]) + "' />";
+		}
+		cmd += "</blast>";
+		cmd += "<stab>";
+		array<string> sKeys = m_stabKilledMaps.getKeys();
+		for (uint i = 0; i < sKeys.size(); i++) {
+			cmd += "<map id='" + escapeXml(sKeys[i]) + "' />";
+		}
+		cmd += "</stab>";
+		cmd += "<roadkill>";
+		array<string> rKeys = m_roadkilledMaps.getKeys();
+		for (uint i = 0; i < rKeys.size(); i++) {
+			cmd += "<map id='" + escapeXml(rKeys[i]) + "' />";
+		}
+		cmd += "</roadkill>";
+		cmd += "</combat>";
 
 		cmd += "</ap_mod_state>";
 		cmd += "</command>";
@@ -1700,6 +1836,40 @@ class APTracker : Tracker {
 			m_lastAppliedXPBoost = xpElem.getIntAttribute("last_xp_boost");
 			_log("[AP] Restored XP tracking: last_rank=" + m_lastAppliedRank +
 				", last_xp_boost=" + m_lastAppliedXPBoost);
+		}
+
+		// Restore combat milestones
+		const XmlElement@ combatElem = modState.getFirstElementByTagName("combat");
+		if (combatElem !is null) {
+			m_killCount = combatElem.getIntAttribute("kill_count");
+			const XmlElement@ blastElem = combatElem.getFirstElementByTagName("blast");
+			if (blastElem !is null) {
+				array<const XmlElement@>@ ms = blastElem.getElementsByTagName("map");
+				for (uint i = 0; i < ms.size(); i++) {
+					string id = ms[i].getStringAttribute("id");
+					if (id.length() > 0) m_blastKilledMaps.set(id, true);
+				}
+			}
+			const XmlElement@ stabElem = combatElem.getFirstElementByTagName("stab");
+			if (stabElem !is null) {
+				array<const XmlElement@>@ ms = stabElem.getElementsByTagName("map");
+				for (uint i = 0; i < ms.size(); i++) {
+					string id = ms[i].getStringAttribute("id");
+					if (id.length() > 0) m_stabKilledMaps.set(id, true);
+				}
+			}
+			const XmlElement@ roadElem = combatElem.getFirstElementByTagName("roadkill");
+			if (roadElem !is null) {
+				array<const XmlElement@>@ ms = roadElem.getElementsByTagName("map");
+				for (uint i = 0; i < ms.size(); i++) {
+					string id = ms[i].getStringAttribute("id");
+					if (id.length() > 0) m_roadkilledMaps.set(id, true);
+				}
+			}
+			_log("[AP] Restored combat: " + m_killCount + " kills, " +
+				m_blastKilledMaps.getKeys().size() + " blast maps, " +
+				m_stabKilledMaps.getKeys().size() + " stab maps, " +
+				m_roadkilledMaps.getKeys().size() + " roadkill maps");
 		}
 	}
 

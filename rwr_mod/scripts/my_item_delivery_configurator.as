@@ -85,6 +85,37 @@ class APLaptopUnlocker : ResourceUnlocker {
 	}
 }
 
+// Diagnostic subclass: logs every drop event so we can investigate cases where
+// a delivery isn't counted (wrong container, hasStarted false, item key mismatch...).
+class APItemDeliveryObjective : ItemDeliveryObjective {
+	APItemDeliveryObjective(Metagame@ metagame, int factionId,
+		const array<Resource@>@ itemList, ItemDeliveryOrganizer@ organizer,
+		ResourceUnlocker@ unlocker, string instructions, string mapText,
+		string thanks, string thanksIncomplete, int amount,
+		float rewardPerPiece = 0, float rewardForCompletion = 50) {
+		super(metagame, factionId, itemList, organizer, unlocker,
+			instructions, mapText, thanks, thanksIncomplete, amount,
+			rewardPerPiece, rewardForCompletion);
+	}
+
+	protected void handleItemDropEvent(const XmlElement@ event) override {
+		string itemKey = event.getStringAttribute("item_key");
+		int containerId = event.getIntAttribute("target_container_type_id");
+		string watched = "";
+		for (uint i = 0; i < m_itemList.size(); i++) {
+			if (i > 0) watched += ",";
+			watched += m_itemList[i].m_key;
+		}
+		_log("[AP_DROP] item=" + itemKey + " container=" + containerId +
+			" watched=" + watched +
+			" started=" + (hasStarted() ? "1" : "0") +
+			" done=" + (m_deliveryDone ? "1" : "0") +
+			" collapseTimer=" + m_collapseTimer +
+			" amount=" + m_deliveryAmount);
+		ItemDeliveryObjective::handleItemDropEvent(event);
+	}
+}
+
 // ================================================================================================
 class MyItemDeliveryConfigurator : ItemDeliveryConfiguratorInvasion {
 	// ------------------------------------------------------------------------------------------------
@@ -178,8 +209,7 @@ class MyItemDeliveryConfigurator : ItemDeliveryConfiguratorInvasion {
 
 			int amount = 5;
 
-			// Use backwards-compatible constructor (12 params)
-			ItemDeliveryObjective objective(m_metagame, 0, deliveryList,
+			APItemDeliveryObjective objective(m_metagame, 0, deliveryList,
 				m_itemDeliveryOrganizer, unlocker, instructions, "",
 				thanks, thanksIncomplete, amount, 0, 50);
 

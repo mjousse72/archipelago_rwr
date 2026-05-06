@@ -144,6 +144,7 @@
 	</weapon>
 
 	<weapon file="beretta_m9.weapon">
+		<commonness in_stock="1" />
 		<capacity source="rank" source_value="0.0" value="1" />
 	</weapon>
 
@@ -152,6 +153,7 @@
 	</weapon>
 
 	<weapon file="glock17.weapon">
+		<commonness in_stock="1" />
 		<capacity source="rank" source_value="0.0" value="1" />
 	</weapon>
 
@@ -176,6 +178,7 @@
 	</weapon>
 
 	<weapon file="desert_eagle_gold.weapon">
+		<commonness in_stock="1" />
 		<capacity source="rank" source_value="0.0" value="1" />
 	</weapon>
 
@@ -260,12 +263,14 @@
 	<weapon file="buggy_mg.weapon" />
 	
 	<weapon file="model_29.weapon">
+		<commonness in_stock="1" />
 		<capacity source="rank" source_value="0.0" value="1" />
 	</weapon>
 	
 	<weapon file="m712.weapon">
+		<commonness in_stock="1" />
 		<capacity source="rank" source_value="0.0" value="1" />
-	</weapon> 
+	</weapon>
 	
 	<weapon file="mg42.weapon">
 		<commonness value="0.00001" in_stock="1" />
@@ -467,9 +472,13 @@
 	</weapon>
 	
 	<weapon file="radar_tank_cannon.weapon" />
-	<weapon file="ump40.weapon" />
+	<weapon file="ump40.weapon">
+		<commonness in_stock="1" />
+	</weapon>
 	<weapon file="mx4_storm.weapon" />
-	<weapon file="bizon.weapon" />
+	<weapon file="bizon.weapon">
+		<commonness in_stock="1" />
+	</weapon>
 	<weapon file="medikit_ai.weapon" />
 	<weapon file="medikit_ai_2.weapon" />
 	<weapon file="dragons_breath.weapon" >	
@@ -821,7 +830,9 @@
 	<weapon file="xmas_tree_resource.weapon">
 		<capacity source="rank" source_value="0.0" value="1" />
 	</weapon>
-	<weapon file="ak47_w_gp25_ai.weapon" />
+	<weapon file="ak47_w_gp25_ai.weapon">
+		<commonness in_stock="1" />
+	</weapon>
 	<weapon file="g36_w_ag36_ai.weapon" />
 	<weapon file="m16a4_w_m203_ai.weapon" />
 

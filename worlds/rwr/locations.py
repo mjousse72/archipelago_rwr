@@ -264,7 +264,30 @@ RP_SHOP_LOCATIONS: list[tuple[str, str]] = [
     for i in range(1, _MAX_RP_SHOP_PER_MAP + 1)
 ]
 
-# All possible locations (superset — used for stable ID assignment)
+# --- Combat milestones (toggle: combat_milestones) ---
+
+KILL_MILESTONES: list[int] = [1, 10, 25, 50, 100, 200, 500, 1000]
+
+
+def _kill_milestone_name(n: int) -> str:
+    return f"Killed {n} enemy" if n == 1 else f"Killed {n} enemies"
+
+
+KILL_MILESTONE_LOCATIONS: list[tuple[str, str]] = [
+    (_kill_milestone_name(n), "Combat") for n in KILL_MILESTONES
+]
+BLAST_KILL_LOCATIONS: list[tuple[str, str]] = [
+    (f"Blast kill on {m}", m) for m in ALL_MAP_NAMES
+]
+STAB_KILL_LOCATIONS: list[tuple[str, str]] = [
+    (f"Stab kill on {m}", m) for m in ALL_MAP_NAMES
+]
+ROADKILL_LOCATIONS: list[tuple[str, str]] = [
+    (f"Roadkill on {m}", m) for m in ALL_MAP_NAMES
+]
+
+# All possible locations (superset — used for stable ID assignment).
+# IMPORTANT: order is append-only to keep IDs stable across releases.
 ALL_LOCATIONS: list[tuple[str, str]] = (
     CONQUEST_LOCATIONS
     + SIDE_MISSION_LOCATIONS
@@ -274,6 +297,10 @@ ALL_LOCATIONS: list[tuple[str, str]] = (
     + BRIEFCASE_LOCATIONS
     + LAPTOP_LOCATIONS
     + RP_SHOP_LOCATIONS
+    + KILL_MILESTONE_LOCATIONS
+    + BLAST_KILL_LOCATIONS
+    + STAB_KILL_LOCATIONS
+    + ROADKILL_LOCATIONS
 )
 
 LOCATION_NAME_TO_ID: dict[str, int] = {
@@ -290,6 +317,10 @@ LOCATION_NAME_GROUPS: dict[str, set[str]] = {
     "Briefcase Deliveries": {name for name, _ in BRIEFCASE_LOCATIONS},
     "Laptop Deliveries": {name for name, _ in LAPTOP_LOCATIONS},
     "RP Shop": {name for name, _ in RP_SHOP_LOCATIONS},
+    "Kill Milestones": {name for name, _ in KILL_MILESTONE_LOCATIONS},
+    "Blast Kills": {name for name, _ in BLAST_KILL_LOCATIONS},
+    "Stab Kills": {name for name, _ in STAB_KILL_LOCATIONS},
+    "Roadkills": {name for name, _ in ROADKILL_LOCATIONS},
 }
 for _map_name in ALL_MAP_NAMES:
     LOCATION_NAME_GROUPS[_map_name] = {
@@ -304,6 +335,12 @@ _DELIVERY_NAMES: set[str] = {name for name, _ in DELIVERY_LOCATIONS}
 _BRIEFCASE_NAMES: set[str] = {name for name, _ in BRIEFCASE_LOCATIONS}
 _LAPTOP_NAMES: set[str] = {name for name, _ in LAPTOP_LOCATIONS}
 _RP_SHOP_NAMES: set[str] = {name for name, _ in RP_SHOP_LOCATIONS}
+_COMBAT_NAMES: set[str] = (
+    {name for name, _ in KILL_MILESTONE_LOCATIONS}
+    | {name for name, _ in BLAST_KILL_LOCATIONS}
+    | {name for name, _ in STAB_KILL_LOCATIONS}
+    | {name for name, _ in ROADKILL_LOCATIONS}
+)
 
 
 def create_locations_for_region(world: RWRWorld, region_name: str) -> None:
@@ -316,6 +353,7 @@ def create_locations_for_region(world: RWRWorld, region_name: str) -> None:
     shuffle_briefcases = world.options.shuffle_briefcases.value
     rp_shop_enabled = world.options.rp_shop.value
     rp_shop_per_map = world.options.rp_shop_per_map.value
+    combat_milestones = bool(world.options.combat_milestones)
 
     # Build the set of active progressive capture location names for this config
     active_progressive: set[str] = set()
@@ -363,6 +401,10 @@ def create_locations_for_region(world: RWRWorld, region_name: str) -> None:
             shop_num = int(loc_name.split(" ")[2])
             if shop_num > rp_shop_per_map:
                 continue
+
+        # Filter combat milestones
+        if loc_name in _COMBAT_NAMES and not combat_milestones:
+            continue
 
         loc = RWRLocation(world.player, loc_name, LOCATION_NAME_TO_ID[loc_name], region)
 

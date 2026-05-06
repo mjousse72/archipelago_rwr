@@ -88,6 +88,11 @@ class GameState:
     # Goal
     goal_complete: bool = False
 
+    # Enabled location names (for the overlay's "checks remaining" view).
+    # The bridge writes the full list; the overlay categorizes it client-side
+    # and crosses it with the mod's persisted sent-checks.
+    enabled_location_names: list[str] = field(default_factory=list)
+
 
 # --- Mod state (read from ap_mod_state.xml) ---
 
@@ -328,6 +333,13 @@ class RWRBridge:
             for msg in state.notifications:
                 lines.append(f'    <n text="{_esc(msg)}" />')
             lines.append("  </notifications>")
+
+        # <location_names> (consumed by overlay only; mod ignores)
+        if state.enabled_location_names:
+            lines.append("  <location_names>")
+            for name in state.enabled_location_names:
+                lines.append(f'    <name v="{_esc(name)}" />')
+            lines.append("  </location_names>")
 
         lines.append("</saved_data>")
         return "\n".join(lines) + "\n"
