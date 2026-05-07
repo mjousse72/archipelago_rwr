@@ -1075,15 +1075,15 @@ class APTracker : Tracker {
 	}
 
 	protected string serializeKillCounter(string tag, dictionary@ d) {
-		string out = "<" + tag + ">";
+		string buf = "<" + tag + ">";
 		array<string> keys = d.getKeys();
 		for (uint i = 0; i < keys.size(); i++) {
 			int n = 0;
 			d.get(keys[i], n);
-			out += "<map id='" + escapeXml(keys[i]) + "' count='" + n + "' />";
+			buf += "<map id='" + escapeXml(keys[i]) + "' count='" + n + "' />";
 		}
-		out += "</" + tag + ">";
-		return out;
+		buf += "</" + tag + ">";
+		return buf;
 	}
 
 	protected void checkBaseCaptures(string mapName) {

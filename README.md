@@ -81,29 +81,87 @@ This generates:
 
 ## YAML Options
 
-| Option | Values | Description |
-|--------|--------|-------------|
-| `goal` | campaign_complete, maps_conquered | Win condition |
-| `maps_to_conquer` | 1–10 | Maps needed for maps_conquered goal |
-| `weapon_shuffle` | none, categories, individual | How weapons are randomized (~196 weapons in individual mode) |
-| `include_side_missions` | on/off | Add side mission locations |
-| `base_capture_mode` | progressive, individual | How base captures create locations |
-| `base_captures_per_map` | 1–10 | Milestones per map in progressive mode |
-| `shuffle_deliveries` | on/off | Weapon delivery objectives as locations |
-| `shuffle_briefcases` | on/off | Briefcase pickups as locations |
-| `shuffle_laptops` | on/off | Laptop pickups as locations |
-| `shuffle_radio_calls` | on/off | Randomize radio call access |
-| `rp_shop` | on/off | Enable RP Shop checks |
-| `rp_shop_per_map` | 1–5 | Purchasable checks per map |
-| `rp_shop_cost` | 200–5000 | RP cost per purchase |
-| `trap_chance` | 0–100 | Percentage of filler items that become traps |
-| `death_link` | on/off | Shared deaths across games |
-| `death_link_mode` | kill, random_trap | What happens on received death link |
-| `grenade_shuffle` | none, grouped, individual | Vanilla grenade randomization |
-| `vest_shuffle` | none, grouped, individual | Vest randomization |
-| `costume_shuffle` | none, grouped, individual | Costume randomization |
+### Goal
 
-See the full options list in the Archipelago launcher.
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `goal` | `campaign_complete`, `maps_conquered`, `full_conquest`, `all_weapons` | `campaign_complete` | Win condition. `all_weapons` requires `weapon_shuffle` set to `categories` or `individual`. |
+| `maps_to_win` | `3`–`10` | `8` | Number of maps to conquer when `goal: maps_conquered`. |
+
+### Starting state
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `starting_rank` | `0`–`3` | `0` | Squadmate Slots pre-collected at start. Each slot = +1 rank = bigger squad. |
+| `starting_map` | `moorland_trenches`, `keepsake_bay`, `old_fort_creek` | `keepsake_bay` | Which of the first three campaign maps you start on (its key is precollected). |
+| `start_with_basic_weapons` | toggle | off | In categories mode, precollects Assault Rifles + Pistols. In individual mode, one rifle + one pistol. |
+| `start_with_radio` | toggle | off | Precollects the Radio master item (only relevant if `shuffle_radio_calls` is on). |
+| `start_with_grenades` | toggle | off | Precollects all vanilla grenades (only relevant if `grenade_shuffle` is not `none`). |
+| `start_with_vests` | toggle | off | Precollects all vanilla vests (only relevant if `vest_shuffle` is not `none`). |
+| `start_with_costumes` | toggle | off | Precollects all vanilla costumes (only relevant if `costume_shuffle` is not `none`). |
+
+### Item shuffle
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `weapon_shuffle` | `none`, `categories`, `individual` | `categories` | `categories`: 9 group items (Assault Rifles, Machineguns, …). `individual`: ~196 weapon items, max randomization. `none`: vanilla rank-gated. |
+| `shuffle_radio_calls` | toggle | on | Radio calls in the item pool instead of rank-gated. |
+| `grenade_shuffle` | `none`, `grouped`, `individual` | `grouped` | Vanilla grenades (hand, stun, event grenades). |
+| `vest_shuffle` | `none`, `grouped`, `individual` | `grouped` | Vanilla vests (exo, navy, camo). |
+| `costume_shuffle` | `none`, `grouped`, `individual` | `none` | Cosmetic costumes only — purely visual. |
+
+### Location pool
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `include_side_missions` | toggle | on | One side mission location per map. |
+| `base_capture_mode` | `progressive`, `individual` | `progressive` | `progressive`: milestone checks (Captured N bases on Map). `individual`: each named base is its own check (~130 locations). |
+| `base_captures_per_map` | `1`–`10` | `3` | Number of progressive milestones per map (only used in `progressive` mode). |
+| `shuffle_deliveries` | toggle | off | Delivering 5 enemy weapons to the armory creates 15 location checks. |
+| `shuffle_briefcases` | toggle | off | Briefcase + laptop deliveries create 14 location checks (8 + 6). |
+
+### RP Shop
+
+Spend in-game RP via the `/apbuy` command (or the overlay button) to purchase Archipelago checks.
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `rp_shop` | toggle | off | Enable the RP Shop. |
+| `rp_shop_per_map` | `1`–`5` | `3` | Purchasable checks per map. |
+| `rp_shop_cost` | `200`–`5000` | `500` | RP cost per purchase. |
+
+### Combat milestones
+
+Cumulative kill milestones at fixed thresholds + per-map kill-method goals. Adds 44 locations when enabled.
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `combat_milestones` | toggle | on | Enable kill milestones (1, 10, 25, 50, 100, 200, 500, 1000) plus per-map blast/stab/roadkill goals. |
+| `blast_kills_per_map` | `1`–`50` | `5` | Blast kills required on each map to unlock its check. |
+| `stab_kills_per_map` | `1`–`50` | `5` | Stab kills required on each map. |
+| `roadkills_per_map` | `1`–`50` | `5` | Vehicle roadkills required on each map. |
+
+### Traps
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `trap_chance` | `0`–`100` | `15` | Percentage of filler items replaced by traps (Demotion, Radio Jammer, Friendly Fire). |
+| `trap_severity` | `mild`, `medium`, `harsh` | `medium` | Trap intensity. `mild` = 30s effects; `harsh` = 150s. |
+
+### Multiplayer
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `death_link` | toggle | off | Shared deaths across all DeathLink-enabled games. |
+| `death_link_mode` | `kill`, `random_trap` | `kill` | What happens on received death link. |
+
+### Presets
+
+The Archipelago launcher exposes four presets bundled with the apworld:
+- **Standard Campaign** — campaign_complete + categories shuffle (recommended first run)
+- **Quick Run** — maps_conquered (7 maps) with most shuffles off
+- **Maximum Checks** — all shuffles on, individual modes everywhere
+- **Completionist** — full_conquest goal + everything individual
 
 ## License
 

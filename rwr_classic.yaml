@@ -12,16 +12,16 @@ Running with Rifles:
 
   # Weapons shuffled by category (Assault Rifles, Machineguns, etc.) — simpler
   # than the individual mode which scatters every weapon as its own item.
-  weapon_shuffle: categories
-  start_with_basic_weapons: true
+  weapon_shuffle: individual
+  start_with_basic_weapons: false
 
   # Radio calls and equipment locked behind items
   shuffle_radio_calls: true
   start_with_radio: false
 
   # Vanilla grenades and vests are unlocked via single grouped items
-  grenade_shuffle: grouped
-  vest_shuffle: grouped
+  grenade_shuffle: individual
+  vest_shuffle: individual
   costume_shuffle: none
   start_with_grenades: false
   start_with_vests: false
@@ -29,15 +29,15 @@ Running with Rifles:
 
   # Base captures use progressive milestones (e.g. "Captured 3 bases on X")
   base_capture_mode: progressive
-  base_captures_per_map: 3
+  base_captures_per_map: 5
 
   # Side missions count as locations (objects, prisoners, cargo, etc.)
   include_side_missions: true
 
   # Optional location packs — off for a focused, classic experience
-  shuffle_deliveries: false
-  shuffle_briefcases: false
-  rp_shop: false
+  shuffle_deliveries: True
+  shuffle_briefcases: True
+  rp_shop: True
 
   # Traps: low chance, default severity
   trap_chance: 15
