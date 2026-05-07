@@ -147,11 +147,14 @@ class APTracker : Tracker {
 	protected int m_lastAppliedXPBoost = 0;
 	protected float m_xpCooldownTimer = 0.0;  // wait after sending xp_reward
 
-	// -- Combat milestones (kill counters + per-map first-of-kind sets) --
+	// -- Combat milestones (kill counters: total + per-map per-method) --
 	protected int m_killCount = 0;
-	protected dictionary m_blastKilledMaps;
-	protected dictionary m_stabKilledMaps;
-	protected dictionary m_roadkilledMaps;
+	protected dictionary m_blastKillsByMap;     // map_id → int count
+	protected dictionary m_stabKillsByMap;
+	protected dictionary m_roadkillsByMap;
+	protected int m_blastKillsThreshold = 5;    // overridden by ap_state.xml
+	protected int m_stabKillsThreshold = 5;
+	protected int m_roadkillsThreshold = 5;
 
 	// ============================================================
 	//  CONSTRUCTOR
@@ -571,6 +574,17 @@ class APTracker : Tracker {
 			m_deathLinkPending = (xmlPending && !m_deathLinkAcked);
 			m_deathLinkMode = dlElem.getStringAttribute("mode");
 			if (m_deathLinkMode == "") m_deathLinkMode = "kill";
+		}
+
+		// <combat blast_per_map="5" stab_per_map="5" roadkill_per_map="5" />
+		const XmlElement@ combatElem = root.getFirstElementByTagName("combat");
+		if (combatElem !is null) {
+			int v = combatElem.getIntAttribute("blast_per_map");
+			if (v > 0) m_blastKillsThreshold = v;
+			v = combatElem.getIntAttribute("stab_per_map");
+			if (v > 0) m_stabKillsThreshold = v;
+			v = combatElem.getIntAttribute("roadkill_per_map");
+			if (v > 0) m_roadkillsThreshold = v;
 		}
 
 		// <rp_shop enabled="0" cost="1000" per_map="3" />
@@ -1034,22 +1048,42 @@ class APTracker : Tracker {
 			}
 		}
 
-		// Per-map first-of-kind checks
+		// Per-map per-method threshold checks
 		if (m_currentMapId.length() == 0) return;
 		string method = event.getStringAttribute("method_hint");
 		string mapName = getMapNameFromId(m_currentMapId);
 		if (mapName.length() == 0) return;
 
-		if (method == "blast" && !m_blastKilledMaps.exists(m_currentMapId)) {
-			m_blastKilledMaps.set(m_currentMapId, true);
-			reportCheck("Blast kill on " + mapName);
-		} else if (method == "stab" && !m_stabKilledMaps.exists(m_currentMapId)) {
-			m_stabKilledMaps.set(m_currentMapId, true);
-			reportCheck("Stab kill on " + mapName);
-		} else if (method == "drive_over" && !m_roadkilledMaps.exists(m_currentMapId)) {
-			m_roadkilledMaps.set(m_currentMapId, true);
-			reportCheck("Roadkill on " + mapName);
+		if (method == "blast") {
+			int n = bumpKillCounter(m_blastKillsByMap, m_currentMapId);
+			if (n >= m_blastKillsThreshold) reportCheck("Blast kill on " + mapName);
+		} else if (method == "stab") {
+			int n = bumpKillCounter(m_stabKillsByMap, m_currentMapId);
+			if (n >= m_stabKillsThreshold) reportCheck("Stab kill on " + mapName);
+		} else if (method == "drive_over") {
+			int n = bumpKillCounter(m_roadkillsByMap, m_currentMapId);
+			if (n >= m_roadkillsThreshold) reportCheck("Roadkill on " + mapName);
 		}
+	}
+
+	protected int bumpKillCounter(dictionary@ d, string key) {
+		int n = 0;
+		d.get(key, n);
+		n++;
+		d.set(key, n);
+		return n;
+	}
+
+	protected string serializeKillCounter(string tag, dictionary@ d) {
+		string out = "<" + tag + ">";
+		array<string> keys = d.getKeys();
+		for (uint i = 0; i < keys.size(); i++) {
+			int n = 0;
+			d.get(keys[i], n);
+			out += "<map id='" + escapeXml(keys[i]) + "' count='" + n + "' />";
+		}
+		out += "</" + tag + ">";
+		return out;
 	}
 
 	protected void checkBaseCaptures(string mapName) {
@@ -1692,24 +1726,9 @@ class APTracker : Tracker {
 
 		// Combat milestones
 		cmd += "<combat kill_count='" + m_killCount + "'>";
-		cmd += "<blast>";
-		array<string> bKeys = m_blastKilledMaps.getKeys();
-		for (uint i = 0; i < bKeys.size(); i++) {
-			cmd += "<map id='" + escapeXml(bKeys[i]) + "' />";
-		}
-		cmd += "</blast>";
-		cmd += "<stab>";
-		array<string> sKeys = m_stabKilledMaps.getKeys();
-		for (uint i = 0; i < sKeys.size(); i++) {
-			cmd += "<map id='" + escapeXml(sKeys[i]) + "' />";
-		}
-		cmd += "</stab>";
-		cmd += "<roadkill>";
-		array<string> rKeys = m_roadkilledMaps.getKeys();
-		for (uint i = 0; i < rKeys.size(); i++) {
-			cmd += "<map id='" + escapeXml(rKeys[i]) + "' />";
-		}
-		cmd += "</roadkill>";
+		cmd += serializeKillCounter("blast", m_blastKillsByMap);
+		cmd += serializeKillCounter("stab", m_stabKillsByMap);
+		cmd += serializeKillCounter("roadkill", m_roadkillsByMap);
 		cmd += "</combat>";
 
 		cmd += "</ap_mod_state>";
@@ -1842,34 +1861,28 @@ class APTracker : Tracker {
 		const XmlElement@ combatElem = modState.getFirstElementByTagName("combat");
 		if (combatElem !is null) {
 			m_killCount = combatElem.getIntAttribute("kill_count");
-			const XmlElement@ blastElem = combatElem.getFirstElementByTagName("blast");
-			if (blastElem !is null) {
-				array<const XmlElement@>@ ms = blastElem.getElementsByTagName("map");
-				for (uint i = 0; i < ms.size(); i++) {
-					string id = ms[i].getStringAttribute("id");
-					if (id.length() > 0) m_blastKilledMaps.set(id, true);
-				}
-			}
-			const XmlElement@ stabElem = combatElem.getFirstElementByTagName("stab");
-			if (stabElem !is null) {
-				array<const XmlElement@>@ ms = stabElem.getElementsByTagName("map");
-				for (uint i = 0; i < ms.size(); i++) {
-					string id = ms[i].getStringAttribute("id");
-					if (id.length() > 0) m_stabKilledMaps.set(id, true);
-				}
-			}
-			const XmlElement@ roadElem = combatElem.getFirstElementByTagName("roadkill");
-			if (roadElem !is null) {
-				array<const XmlElement@>@ ms = roadElem.getElementsByTagName("map");
-				for (uint i = 0; i < ms.size(); i++) {
-					string id = ms[i].getStringAttribute("id");
-					if (id.length() > 0) m_roadkilledMaps.set(id, true);
-				}
-			}
+			deserializeKillCounter(combatElem, "blast", m_blastKillsByMap);
+			deserializeKillCounter(combatElem, "stab", m_stabKillsByMap);
+			deserializeKillCounter(combatElem, "roadkill", m_roadkillsByMap);
 			_log("[AP] Restored combat: " + m_killCount + " kills, " +
-				m_blastKilledMaps.getKeys().size() + " blast maps, " +
-				m_stabKilledMaps.getKeys().size() + " stab maps, " +
-				m_roadkilledMaps.getKeys().size() + " roadkill maps");
+				m_blastKillsByMap.getKeys().size() + " blast maps, " +
+				m_stabKillsByMap.getKeys().size() + " stab maps, " +
+				m_roadkillsByMap.getKeys().size() + " roadkill maps");
+		}
+	}
+
+	protected void deserializeKillCounter(const XmlElement@ parent, string tag, dictionary@ d) {
+		const XmlElement@ elem = parent.getFirstElementByTagName(tag);
+		if (elem is null) return;
+		array<const XmlElement@>@ ms = elem.getElementsByTagName("map");
+		for (uint i = 0; i < ms.size(); i++) {
+			string id = ms[i].getStringAttribute("id");
+			if (id.length() == 0) continue;
+			// Backwards-compat: old saves had no `count` attribute (set semantics).
+			// Treat absent count as the current threshold so the check stays sent.
+			int n = ms[i].getIntAttribute("count");
+			if (n <= 0) n = 1;
+			d.set(id, n);
 		}
 	}
 

@@ -105,6 +105,9 @@ class RWRWorld(World):
             "rp_shop_per_map",
             "rp_shop_cost",
             "combat_milestones",
+            "blast_kills_per_map",
+            "stab_kills_per_map",
+            "roadkills_per_map",
             "death_link",
             "death_link_mode",
         )

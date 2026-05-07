@@ -273,9 +273,39 @@ class RPShopCost(Range):
 class CombatMilestones(DefaultOnToggle):
     """
     Add combat-based milestone checks: cumulative kill milestones (1, 10, 25, 50, 100,
-    200, 500, 1000) plus first blast/stab/roadkill on each map. Adds 44 locations.
+    200, 500, 1000) plus blast/stab/roadkill threshold on each map. Adds 44 locations.
     """
     display_name = "Combat Milestones"
+
+
+class BlastKillsPerMap(Range):
+    """
+    Number of blast kills required per map to unlock the corresponding check.
+    """
+    display_name = "Blast Kills Per Map"
+    range_start = 1
+    range_end = 50
+    default = 5
+
+
+class StabKillsPerMap(Range):
+    """
+    Number of stab kills required per map to unlock the corresponding check.
+    """
+    display_name = "Stab Kills Per Map"
+    range_start = 1
+    range_end = 50
+    default = 5
+
+
+class RoadkillsPerMap(Range):
+    """
+    Number of vehicle roadkills required per map to unlock the corresponding check.
+    """
+    display_name = "Roadkills Per Map"
+    range_start = 1
+    range_end = 50
+    default = 5
 
 
 class DeathLink(Toggle):
@@ -325,6 +355,9 @@ class RWROptions(PerGameCommonOptions):
     rp_shop_per_map: RPShopPerMap
     rp_shop_cost: RPShopCost
     combat_milestones: CombatMilestones
+    blast_kills_per_map: BlastKillsPerMap
+    stab_kills_per_map: StabKillsPerMap
+    roadkills_per_map: RoadkillsPerMap
     death_link: DeathLink
     death_link_mode: DeathLinkMode
 
@@ -338,7 +371,7 @@ option_groups = [
         GrenadeShuffle, VestShuffle, CostumeShuffle,
         ShuffleDeliveries, ShuffleBriefcases,
         RPShop, RPShopPerMap, RPShopCost,
-        CombatMilestones,
+        CombatMilestones, BlastKillsPerMap, StabKillsPerMap, RoadkillsPerMap,
         StartWithGrenades, StartWithVests, StartWithCostumes,
         StartWithRadio, StartWithBasicWeapons,
     ]),

@@ -363,6 +363,11 @@ def build_game_state(
     # Goal
     state.goal_complete = finished_game
 
+    # Combat milestone thresholds
+    state.blast_kills_per_map = int(slot_data.get("blast_kills_per_map", 5))
+    state.stab_kills_per_map = int(slot_data.get("stab_kills_per_map", 5))
+    state.roadkills_per_map = int(slot_data.get("roadkills_per_map", 5))
+
     # Enabled location names (for the overlay's "checks remaining" view).
     # Reuse build_location_table so the option-filtering logic stays single-sourced.
     state.enabled_location_names = list(build_location_table(slot_data).keys())

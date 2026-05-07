@@ -88,6 +88,11 @@ class GameState:
     # Goal
     goal_complete: bool = False
 
+    # Combat milestone thresholds (per-map kills required to unlock the check)
+    blast_kills_per_map: int = 5
+    stab_kills_per_map: int = 5
+    roadkills_per_map: int = 5
+
     # Enabled location names (for the overlay's "checks remaining" view).
     # The bridge writes the full list; the overlay categorizes it client-side
     # and crosses it with the mod's persisted sent-checks.
@@ -322,6 +327,13 @@ class RWRBridge:
             f'  <death_link enabled="{_b(state.death_link_enabled)}" '
             f'pending="{_b(state.death_link_pending)}" '
             f'mode="{_esc(state.death_link_mode)}" />'
+        )
+
+        # <combat blast_per_map="5" stab_per_map="5" roadkill_per_map="5" />
+        lines.append(
+            f'  <combat blast_per_map="{state.blast_kills_per_map}" '
+            f'stab_per_map="{state.stab_kills_per_map}" '
+            f'roadkill_per_map="{state.roadkills_per_map}" />'
         )
 
         # <goal complete="0" />
